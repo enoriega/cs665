@@ -1,0 +1,68 @@
+package qa.ir
+
+import java.io.File
+import com.typesafe.config.ConfigFactory
+import org.apache.lucene.analysis.standard.StandardAnalyzer;
+import org.apache.lucene.document;
+import org.apache.lucene.document.Field;
+import org.apache.lucene.document.StringField;
+import org.apache.lucene.document.TextField;
+import org.apache.lucene.store.FSDirectory;
+import org.apache.lucene.index.IndexReader;
+import org.apache.lucene.index.IndexWriter;
+import org.apache.lucene.index.IndexWriterConfig;
+
+class WikipediaIndex(name:String) extends IRIndex(name) {
+  def query(question:String, choice:String):Seq[Document] ={
+    // TODO: Finish this implementation
+    Seq()
+  }
+}
+
+// Index the wikipedia with Lucene
+object WikipediaIndexer extends App{
+  // Read config
+  val config = if (args.isEmpty) ConfigFactory.load()
+    else ConfigFactory.parseFile(new File(args(0))).resolve()
+
+  val textDir = new File(config.getString("wiki.textDir"))
+  val indexDir = new File(config.getString("wiki.indexDir"))
+
+  // Analyzer for reading and writting
+  val analyzer = new StandardAnalyzer
+
+  // Create the index writer
+  val indexWriter = {
+    val index = FSDirectory.open(indexDir.toPath)
+    val config = new IndexWriterConfig(analyzer)
+
+    new IndexWriter(index, config)
+  }
+
+  //Iterate over all the wiki files
+  for(
+       dir <- textDir.listFiles if dir.isDirectory;
+       file <- dir.listFiles if file.getName.startsWith("wiki_")
+     )
+  {
+    println(s"Processing ${file.getName}...")
+    val text = scala.io.Source.fromFile(file).mkString
+    val articles = text.split("</?doc.*>").filter(_ != "")
+
+    for(article <- articles){
+      val doc = mkDocument(article)
+      // Add to the index
+      indexWriter.addDocument(doc)
+    }
+  }
+
+  indexWriter.close
+
+  def mkDocument(text:String):document.Document = {
+    val doc = new document.Document();
+    doc.add(new TextField("content", text, Field.Store.YES));
+
+    doc
+  }
+
+}
