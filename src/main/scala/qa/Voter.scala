@@ -16,6 +16,7 @@ class Voter {}
 
 object Voter {
   val processor = new FastNLPProcessor(withDiscourse = false)
+  val questionFilter = new QuestionFilter
 
   def castVotes(questions: Array[KaggleQuestion], rankers:Array[Ranker], method:String = "single"): Array[(Int, Int)] = {
 
@@ -31,41 +32,58 @@ object Voter {
       val correct = questions(i).correct
       val numAns = questions(i).choices.length
 
-      val voteTally = Array.fill[Double](numAns)(0.0)
+      val filterOut = questionFilter.mainFilter(questions(i))
 
-      // Have rankers cast votes
-      for (ranker <- rankers) {
-        val scores = ranker.scores(i)
-        val votes = getVotes(scores, method)
-        // Add the vote(s) for the ranker to the overall tally for the question
-        for (j <- votes.indices) voteTally(j) += votes(j)
-      }
+      if (filterOut) {
+        println (s"filtering out question $i")
+        selections(i) = (qid, 3)
 
-      // Tally votes, look for ties, choose winner
-      val chosen = new ArrayBuffer[Int]
-      val sortedVotes = voteTally.zipWithIndex.sortBy(- _._1)
-      val maxVote = sortedVotes.head._1
-      for (sv <- sortedVotes) {
-        if (sv._1 == maxVote) chosen.append(sv._2)
-      }
+        if (correct == 3) {
+          precisionAt1 += 1.0 / numQuestions.toDouble
+          println ("Filtered question was answered CORRECTLY")
+        } else {
+          println ("Filtered question was answered INCORRECTLY")
+        }
 
-      // Select and Store answer -- if tie - select at random?
-      // Case 1: No tie --
-      if (chosen.length == 1) {
-        selections(i) = (qid, chosen.head)
-      }
-      // When there's a tie -- choose randomly (can change)
-      else if (chosen.length > 1) {
-        val randomInt = Random.nextInt(chosen.length)
-        selections(i) = (qid, chosen(randomInt))
-      }
-      // Catch error
-      else {
-        throw new RuntimeException ("ERROR: no answer is selected for question " + i)
-      }
+      } else {
+        val voteTally = Array.fill[Double](numAns)(0.0)
 
-      // Calculate the P@1 for question:
-      if (chosen.contains(correct)) precisionAt1 += (1.0 / chosen.length.toDouble) / numQuestions.toDouble
+        // Have rankers cast votes
+        for (ranker <- rankers) {
+          val scores = ranker.scores(i)
+          val votes = getVotes(scores, method)
+          // Add the vote(s) for the ranker to the overall tally for the question
+          for (j <- votes.indices) voteTally(j) += votes(j)
+        }
+
+        // Tally votes, look for ties, choose winner
+        val chosen = new ArrayBuffer[Int]
+        val sortedVotes = voteTally.zipWithIndex.sortBy(- _._1)
+        val maxVote = sortedVotes.head._1
+        for (sv <- sortedVotes) {
+          if (sv._1 == maxVote) chosen.append(sv._2)
+        }
+
+        // Select and Store answer -- if tie - select at random?
+        // Case 1: No tie --
+        if (chosen.length == 1) {
+          selections(i) = (qid, chosen.head)
+        }
+        // When there's a tie -- choose randomly (can change)
+        else if (chosen.length > 1) {
+          val randomInt = Random.nextInt(chosen.length)
+          selections(i) = (qid, chosen(randomInt))
+        }
+        // Catch error
+        else {
+          throw new RuntimeException ("ERROR: no answer is selected for question " + i)
+        }
+
+        // Calculate the P@1 for question:
+        if (chosen.contains(correct)) precisionAt1 += (1.0 / chosen.length.toDouble) / numQuestions.toDouble
+        else println (s"Failed to answer question $i correctly.  (Chosen = ${chosen.mkString(",")}, correct = ${correct})")
+
+      }
 
     }
 
@@ -189,7 +207,7 @@ object Voter {
     pw.close()
   }
 
-  def parseTSV (tsv:String): Array[Array[Double]] = {
+  def parseTSV (tsv:String, questions:Array[KaggleQuestion]): Array[Array[Double]] = {
     println ("Loading scores from " + tsv)
 
     val out = new ArrayBuffer[Array[Double]]
@@ -199,7 +217,9 @@ object Voter {
     for (line <- lines) {
       val fields = line.split("\t")
       assert (fields.length == 3)
-      val qid = fields(0).toInt
+      var qid = fields(0).toInt
+      // If the tsv is in the Sia format - replace the qIndex with the qID
+      // if (qid < 9000) qid = questions(qid).id
       val aid = fields(1).toInt
       val score = fields(2).toDouble
 
@@ -213,6 +233,7 @@ object Voter {
     out.toArray
   }
 
+
   def loadQuestions (filename:String): Array[KaggleQuestion] = {
 
     println ("Loading questions from " + filename + "...")
@@ -224,7 +245,6 @@ object Voter {
     for (line <- lines.slice(1, lines.length)) {
       println (line)
       val fields = line.split("\t")
-
       val qid = fields(0).toInt
       val qText = fields(1)
       val correct = if (fields.length == 7) answerLabels.indexOf(fields(2)) else -1
@@ -237,7 +257,7 @@ object Voter {
     out.toArray
   }
 
-  def loadRankers (props:Properties): Array[Ranker] = {
+  def loadRankers (props:Properties, questions:Array[KaggleQuestion]): Array[Ranker] = {
     val rankers = new ArrayBuffer[Ranker]
 
     val nRankers = StringUtils.getInt(props, "maxrankers", 10)
@@ -246,7 +266,7 @@ object Voter {
       val rankerPrefix = props.getProperty(s"ranker.$i.prefix", "NULL_PREFIX")
       if (enabled) {
         val rankerTSVFile = props.getProperty(s"ranker.$i.tsv")
-        val rankerScores = parseTSV(rankerTSVFile)
+        val rankerScores = parseTSV(rankerTSVFile, questions)
         rankers.append(new Ranker(rankerScores))
         println (s"Appended Ranker $i: $rankerPrefix")
       }
@@ -255,14 +275,24 @@ object Voter {
     rankers.toArray
   }
 
+  def filter (questions:Array[KaggleQuestion], selections: Array[(Int, Int)]):Array[(Int, Int)] = {
+    val out = selections
+    for (i <- questions.indices) {
+      val kq = questions(i)
+      if (questionFilter.questionHasAllAbove(kq)) out(i) = (kq.id, 3)
+    }
+    out
+  }
+
 
 
   def main(args:Array[String]): Unit = {
     val props = StringUtils.argsToProperties(args)
 
     val questions = loadQuestions(props.getProperty("questions"))
-    val rankers = loadRankers(props)
+    val rankers = loadRankers(props, questions)
     val selections = castVotes(questions, rankers, method = "single")
+    //val filtered = filter(questions, selections)
 
     // Save the selections in the correct format
     val submissionCSVFilename = props.getProperty("submission_filename")
