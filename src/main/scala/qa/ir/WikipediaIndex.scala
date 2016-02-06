@@ -1,7 +1,7 @@
 package qa.ir
 
 import java.io.File
-import com.typesafe.config.ConfigFactory
+import com.typesafe.config.{ConfigFactory,Config}
 import org.apache.lucene.analysis.standard.StandardAnalyzer;
 import org.apache.lucene.document;
 import org.apache.lucene.document.Field;
@@ -9,13 +9,31 @@ import org.apache.lucene.document.StringField;
 import org.apache.lucene.document.TextField;
 import org.apache.lucene.store.FSDirectory;
 import org.apache.lucene.index.IndexReader;
+import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.IndexWriterConfig;
+import org.apache.lucene.index.DirectoryReader;
+import org.apache.lucene.queryparser.classic.QueryParser;
 
-class WikipediaIndex(name:String) extends IRIndex(name) {
+class WikipediaIndex(name:String, config:Config) extends IRIndex(name, config) {
+
+  val indexDir = new File(config.getString(s"indexes.$name.indexDir"))
+
+  // Open index
+  val topHits = config.getInt(s"indexes.$name.topHits")
+  val index = FSDirectory.open(indexDir.toPath)
+  val indexReader = DirectoryReader.open(index)
+  val indexSearcher = new IndexSearcher(indexReader)
+  
   def query(question:String, choice:String):Seq[Document] ={
-    // TODO: Finish this implementation
-    Seq()
+    // Parse the query
+    val q = new QueryParser("content", WikipediaIndexer.analyzer).parse(question + "\n" + choice)
+
+    val topDocs = indexSearcher.search(q, topHits);
+    topDocs.scoreDocs map {
+      hit =>
+        Document(indexSearcher.doc(hit.doc).get("content"), hit.score)
+    }
   }
 }
 
@@ -29,7 +47,7 @@ object WikipediaIndexer extends App{
   val indexDir = new File(config.getString("wiki.indexDir"))
 
   // Analyzer for reading and writting
-  val analyzer = new StandardAnalyzer
+  def analyzer = new StandardAnalyzer
 
   // Create the index writer
   val indexWriter = {

@@ -1,13 +1,14 @@
 package qa.ir
 
 import java.io.File
+import com.typesafe.config.Config
 import qa.input.Question
 
 // Models a returned document from an IR Index
 case class Document(val text:String, val score:Double) {}
 
 // API to query an index
-abstract class IRIndex(val name:String){
+abstract class IRIndex(val name:String, config:Config){
     def query(question:String, choice:String):Seq[Document]
 }
 
