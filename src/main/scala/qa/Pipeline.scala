@@ -29,9 +29,10 @@ object Pipeline extends App {
     // Read input into "objects"
     val questions = new InputReader(new File(config.getString("inputFile"))).questions
 
-    val choiceMap = Map(1 -> 'A', 2 -> 'B', 3 -> 'C', 4 -> 'D')
+    val choiceMap = Map(0 -> 'A', 1 -> 'B', 2 -> 'C', 3 -> 'D')
     // Query IR for multiple data bases
     val indexNames = config.getStringList("indexNames").asScala
+
 
     // Load the lucene indexes
     val ixFactory = new IndexFactory(new File(config.getString("luceneDir")))
@@ -53,7 +54,7 @@ object Pipeline extends App {
         index <- indexes
     }  {
         // Expand the question/answers into feature vectors
-        val featureVectors = FeatureExtractor.makeDataPoint(question, index)
+        val featureVectors = ranker.makeDataPoint(question, index)
         // Rank them
         val rankedVectors = ranker.rerank(featureVectors)
 
