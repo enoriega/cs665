@@ -37,7 +37,7 @@ object Pipeline extends App {
     // Load the lucene indexes
     val ixFactory = new IndexFactory(new File(config.getString("luceneDir")))
     val indexes = for(indexName <- indexNames) yield {
-        ixFactory.get(indexName)
+        ixFactory.get(indexName, config)
     }
 
     // Create the output files, one per index

@@ -86,10 +86,11 @@ object TrainIRRanker extends App {
       if (args.size < 2) ConfigFactory.load()
       else ConfigFactory.parseFile(new File(args(1))).resolve()
 
-  val outFile = new File(args(0))
+  val indexName = args(0)
+  val outFile = new File(args(1))
 
   val ranker = new IRRanker
-  println(s"Training the IR Ranker and storing the model in ${args(0)}")
+  println(s"Training the IR Ranker with \"${indexName}\" and storing the model in ${args(1)}")
 
   println("Loading training data...")
   val reader = new InputReader(new File(config.getString("trainingFile")))

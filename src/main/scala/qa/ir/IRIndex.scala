@@ -17,10 +17,10 @@ abstract class IRIndex(val name:String, config:Config){
 
 // Returns concrete Implementations of IRIndex
 class IndexFactory(dir:File){
-    def get(name:String):IRIndex = {
+    def get(name:String, config:Config):IRIndex = {
         name match {
-            case "simple-wiki" => new DummyIndex(name)
-            case "wiki" => new DummyIndex(name)
+            case "simple-wiki" => new WikipediaIndex(name, config)
+            case "wiki" => new WikipediaIndex(name, config)
             case _ => new DummyIndex(name)
         }
     }
