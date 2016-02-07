@@ -15,6 +15,20 @@ class InputReader(file:File){
     def questions:Seq[Question] = lines map {
         line =>
             val t = line.split('\t')
-            Question(t(0), t(1), Seq(t(2), t(3), t(4), t(5)))
+            t.length match {
+              case 6 =>
+                Question(t(0), t(1), Seq(t(2), t(3), t(4), t(5)))
+              case 7 =>
+                val choice = t(2) match {
+                  case "A" => 0
+                  case "B" => 1
+                  case "C" => 2
+                  case "D" => 3
+                }
+                Question(t(0), t(1), Seq(t(3), t(4), t(5), t(6)), Some(choice))
+              case num =>
+                throw new RuntimeException(s"s{file.getName} has $num columns")
+            }
+
     }
 }

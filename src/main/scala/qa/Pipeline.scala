@@ -60,7 +60,7 @@ object Pipeline extends App {
 
         // Write the results to TSV files on disk
         val file = outputFiles(index.name)
-        file.write(s"${question.id}\t${choiceMap(rankedVectors(0).answerChoince)}\n")
+        file.write(s"${question.id}\t${choiceMap(rankedVectors(0).answerChoice)}\n")
     }
 
     // Don't forget to close the files!!
