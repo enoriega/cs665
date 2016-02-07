@@ -39,7 +39,7 @@ class IRRanker extends Ranker{
     FileUtils.writeLines(trainingFile, trainingLines.asJavaCollection)
 
     // Call svm_rank_train
-    val exitCode = s"svm_rank_train -c 3 ${trainingFile.getCanonicalPath} ${modelFile.getCanonicalPath}".!
+    val exitCode = s"svm_rank_learn -c 3 ${trainingFile.getCanonicalPath} ${modelFile.getCanonicalPath}".!
 
     if(exitCode != 0){
       throw new RuntimeException("Error running svm_rank_train!!")
@@ -80,7 +80,7 @@ class IRRanker extends Ranker{
 }
 
 // Entry point to train svm_rank
-class TrainIRRanker extends App {
+object TrainIRRanker extends App {
 
   val config =
       if (args.size < 2) ConfigFactory.load()
