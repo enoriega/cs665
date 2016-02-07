@@ -11,7 +11,7 @@ case class Document(val text:String, val score:Double)
 case class QueryResult(numResults:Int, maxScore:Double, topDocs:Seq[Document])
 
 // API to query an index
-abstract class IRIndex(val name:String){
+abstract class IRIndex(val name:String, config:Config){
     def query(question:String, choice:String):QueryResult
 }
 

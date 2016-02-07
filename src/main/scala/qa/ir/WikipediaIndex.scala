@@ -24,16 +24,19 @@ class WikipediaIndex(name:String, config:Config) extends IRIndex(name, config) {
   val index = FSDirectory.open(indexDir.toPath)
   val indexReader = DirectoryReader.open(index)
   val indexSearcher = new IndexSearcher(indexReader)
-  
-  def query(question:String, choice:String):Seq[Document] ={
+
+  def query(question:String, choice:String):QueryResult ={
     // Parse the query
     val q = new QueryParser("content", WikipediaIndexer.analyzer).parse(question + "\n" + choice)
 
     val topDocs = indexSearcher.search(q, topHits);
-    topDocs.scoreDocs map {
-      hit =>
-        Document(indexSearcher.doc(hit.doc).get("content"), hit.score)
-    }
+
+    QueryResult(topDocs.totalHits, topDocs.getMaxScore,
+      topDocs.scoreDocs map {
+        hit =>
+          Document(indexSearcher.doc(hit.doc).get("content"), hit.score)
+      }
+    )
   }
 }
 
