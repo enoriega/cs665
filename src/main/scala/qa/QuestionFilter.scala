@@ -21,10 +21,9 @@ class QuestionFilter {
     out
   }
 
-  def questionHasAllAbove (kq: KaggleQuestion): Boolean = allAbove(kq.choices.last.text.toLowerCase)
 
   def mainFilter (kq: KaggleQuestion): Boolean = {
-    if (questionHasAllAbove(kq)) return true
+    if (allAbove(kq.choices.last.text.toLowerCase)) return true
     if (ansChoiceCombos(kq.choices.last.text.toLowerCase.split(" "))) return true
     false
   }
