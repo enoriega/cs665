@@ -19,9 +19,9 @@ abstract class IRIndex(val name:String, config:Config){
 class IndexFactory(dir:File){
     def get(name:String, config:Config):IRIndex = {
         name match {
-            case "simple-wiki" => new WikipediaIndex(name, config)
+            case "simple_wiki" => new WikipediaIndex(name, config)
             case "wiki" => new WikipediaIndex(name, config)
-            case _ => new DummyIndex(name)
+            case _ => throw new RuntimeException(s"$name is not a valid index type")
         }
     }
 }

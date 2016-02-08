@@ -29,7 +29,6 @@ object Pipeline extends App {
     // Read input into "objects"
     val questions = new InputReader(new File(config.getString("inputFile"))).questions
 
-    val choiceMap = Map(0 -> 'A', 1 -> 'B', 2 -> 'C', 3 -> 'D')
     // Query IR for multiple data bases
     val indexNames = config.getStringList("indexNames").asScala
 
@@ -42,7 +41,7 @@ object Pipeline extends App {
 
     // Create the output files, one per index
     val outputFiles = (for(indexName <- indexNames) yield {
-        (indexName -> new FileWriter(new File(outputDir, indexName)))
+        (indexName -> new FileWriter(new File(outputDir, s"$indexName.out")))
     }).toMap
 
     // Instantiate the ranker
@@ -52,6 +51,7 @@ object Pipeline extends App {
     for{
         index <- indexes
     }  {
+        println(s"Ranking with index ${index.name}")
         // Rank them
         val rankedQuestions = ranker.rerank(questions, index)
 
