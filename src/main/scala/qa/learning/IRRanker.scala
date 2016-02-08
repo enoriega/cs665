@@ -31,7 +31,7 @@ class IRRanker(config:Config) extends Ranker{
     val outputFile = File.createTempFile(UUID.randomUUID.toString, "txt")
 
     // Call svm_rank_train
-    val exitCode = s"svm_rank_classify -c 3 ${classificationFile.getCanonicalPath} ${this.modelFile.getCanonicalPath} ${outputFile.getCanonicalPath}".!
+    val exitCode = s"svm_rank_classify ${classificationFile.getCanonicalPath} ${this.modelFile.getCanonicalPath} ${outputFile.getCanonicalPath}".!
 
     if(exitCode != 0){
       throw new RuntimeException("Error running svm_rank_train!!")
@@ -69,7 +69,7 @@ class IRRanker(config:Config) extends Ranker{
     FileUtils.writeLines(trainingFile, trainingLines.asJavaCollection)
 
     // Call svm_rank_train
-    val exitCode = s"svm_rank_learn -c 3 ${trainingFile.getCanonicalPath} ${modelFile.getCanonicalPath}".!
+    val exitCode = s"svm_rank_learn -c 20 -e 0.1  -# 10  ${trainingFile.getCanonicalPath} ${modelFile.getCanonicalPath}".!
 
     if(exitCode != 0){
       throw new RuntimeException("Error running svm_rank_train!!")
@@ -126,7 +126,7 @@ object TrainIRRanker extends App {
   val reader = new InputReader(new File(config.getString("trainingFile")))
 
   println("Loading IR Index...")
-  val index = new WikipediaIndex("simple_wiki", config)
+  val index = new WikipediaIndex(indexName, config)
 
   println("Training...")
   ranker.train(reader.questions, index, Some(outFile))
