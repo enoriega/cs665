@@ -18,12 +18,12 @@ object Pipeline extends App {
         else ConfigFactory.parseFile(new File(args(0))).resolve()
 
     // Create the output dir if it doesn´t exist yet
-    val outputDir = new File(config.getString("outputDir"))
-    if (!outputDir.exists) {
-        println(s"creating ${outputDir.getCanonicalPath}")
-        FileUtils.forceMkdir(outputDir)
-    } else if (!outputDir.isDirectory) {
-        sys.error(s"${outputDir.getCanonicalPath} is not a directory")
+    val rankerOutputDir = new File(config.getString("rankerOutputDir"))
+    if (!rankerOutputDir.exists) {
+        println(s"creating ${rankerOutputDir.getCanonicalPath}")
+        FileUtils.forceMkdir(rankerOutputDir)
+    } else if (!rankerOutputDir.isDirectory) {
+        sys.error(s"${rankerOutputDir.getCanonicalPath} is not a directory")
     }
 
     // Read input into "objects"
@@ -42,7 +42,7 @@ object Pipeline extends App {
 
     // Create the output files, one per index
     val outputFiles = (for(indexName <- indexNames) yield {
-        (indexName -> new FileWriter(new File(outputDir, indexName)))
+        (indexName -> new FileWriter(new File(rankerOutputDir, indexName)))
     }).toMap
 
     // Instantiate the ranker
