@@ -46,21 +46,25 @@ object Pipeline extends App {
     }).toMap
 
     // Instantiate the ranker
-    val ranker = RankerFactory.get(config.getString("ranker"))
+    val ranker = new RankerFactory(config).get(config.getString("ranker"))
 
     // Do the mojo
     for{
-        question <- questions
         index <- indexes
     }  {
-        // Expand the question/answers into feature vectors
-        val featureVectors = ranker.makeDataPoint(question, index)
         // Rank them
-        val rankedVectors = ranker.rerank(featureVectors)
+        val rankedQuestions = ranker.rerank(questions, index)
 
         // Write the results to TSV files on disk
         val file = outputFiles(index.name)
-        file.write(s"${question.id}\t${choiceMap(rankedVectors(0).answerChoice)}\n")
+        // TODO: Output the files for the voter
+        for(question <- rankedQuestions){
+          val choice = question.rightChoice match {
+            case Some(c) => c
+            case None => -1
+          }
+          file.write(s"${question.id}\t$choice\n")
+        }
     }
 
     // Don't forget to close the files!!

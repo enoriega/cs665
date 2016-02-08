@@ -7,21 +7,51 @@ import qa.input._
 import qa.ir._
 import scala.collection.JavaConverters._
 import org.apache.commons.io.{ FileUtils, FilenameUtils }
-import com.typesafe.config.ConfigFactory
+import com.typesafe.config._
 
 // IR model for reranking
 // Assumes svm_rank is in the path
-class IRRanker extends Ranker{
+class IRRanker(config:Config) extends Ranker{
 
   // File with the weights of svm_rank
   var modelFile:File = null
 
   // Runs svm_classify and resorts the list with the new order
-  def rerank(list:Seq[DataPoint]):Seq[DataPoint] = list
+  def rerank(questions:Seq[Question], index:IRIndex):Seq[Question] = {
+    // Load the corresponding model depending on the index's name
+    val modelFile = new File(config.getString(s"indexes.${index.name}.irModelFile"))
+    this.load(modelFile)
+
+    val lines:Seq[String] = questions2svmRankLines(questions, index)
+
+    // Write them to a training file
+    val classificationFile = File.createTempFile(UUID.randomUUID.toString, "rank")
+    FileUtils.writeLines(classificationFile, lines.asJavaCollection)
+
+    val outputFile = File.createTempFile(UUID.randomUUID.toString, "txt")
+
+    // Call svm_rank_train
+    val exitCode = s"svm_rank_classify -c 3 ${classificationFile.getCanonicalPath} ${this.modelFile.getCanonicalPath} ${outputFile.getCanonicalPath}".!
+
+    if(exitCode != 0){
+      throw new RuntimeException("Error running svm_rank_train!!")
+    }
+
+    // Fetch the output file and select a choice per question
+    val results = io.Source.fromFile(outputFile).getLines.map(_.toDouble).grouped(4).toList
+
+    for((q, r) <- questions zip results) yield {
+      val prediction = r.indexOf(r.max)
+      Question(q.id, q.question, q.choices, Some(prediction))
+    }
+  }
 
   // Generates features out of the IR query
   def createFeatureVector(question:String,
-       choice:String, queryRes:QueryResult):Seq[Double] = Seq(1, 2, 3, 10)
+       choice:String, queryRes:QueryResult):Seq[Double] = {
+         val sum = queryRes.topDocs.map(_.score).sum
+         Seq(queryRes.numResults, queryRes.maxScore, sum)
+  }
 
   // Trains svm_rank with this questions given this index
   def train(questions:Seq[Question], index:IRIndex, outputFile:Option[File] = None){
@@ -89,7 +119,7 @@ object TrainIRRanker extends App {
   val indexName = args(0)
   val outFile = new File(args(1))
 
-  val ranker = new IRRanker
+  val ranker = new IRRanker(config)
   println(s"Training the IR Ranker with ${indexName} and storing the model in ${args(1)}")
 
   println("Loading training data...")
