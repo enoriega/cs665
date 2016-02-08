@@ -1,23 +1,27 @@
 package qa.ir
 
 import java.io.File
+import com.typesafe.config.Config
 import qa.input.Question
 
 // Models a returned document from an IR Index
-case class Document(val text:String, val score:Double) {}
+case class Document(val text:String, val score:Double)
+
+// Result of the query
+case class QueryResult(numResults:Int, maxScore:Double, topDocs:Seq[Document])
 
 // API to query an index
-abstract class IRIndex(val name:String){
-    def query(question:String, choice:String):Seq[Document]
+abstract class IRIndex(val name:String, config:Config){
+    def query(question:String, choice:String):QueryResult
 }
 
 // Returns concrete Implementations of IRIndex
 class IndexFactory(dir:File){
-    def get(name:String):IRIndex = {
+    def get(name:String, config:Config):IRIndex = {
         name match {
-            case "simple-wiki" => new DummyIndex(name)
-            case "wiki" => new DummyIndex(name)
-            case _ => new DummyIndex(name)
+            case "simple_wiki" => new WikipediaIndex(name, config)
+            case "en_wiki" => new WikipediaIndex(name, config)
+            case _ => throw new RuntimeException(s"$name is not a valid index type")
         }
     }
 }

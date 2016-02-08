@@ -18,48 +18,53 @@ object Pipeline extends App {
         else ConfigFactory.parseFile(new File(args(0))).resolve()
 
     // Create the output dir if it doesn´t exist yet
-    val outputDir = new File(config.getString("outputDir"))
-    if (!outputDir.exists) {
-        println(s"creating ${outputDir.getCanonicalPath}")
-        FileUtils.forceMkdir(outputDir)
-    } else if (!outputDir.isDirectory) {
-        sys.error(s"${outputDir.getCanonicalPath} is not a directory")
+    val rankerOutputDir = new File(config.getString("rankerOutputDir"))
+    if (!rankerOutputDir.exists) {
+        println(s"creating ${rankerOutputDir.getCanonicalPath}")
+        FileUtils.forceMkdir(rankerOutputDir)
+    } else if (!rankerOutputDir.isDirectory) {
+        sys.error(s"${rankerOutputDir.getCanonicalPath} is not a directory")
     }
 
     // Read input into "objects"
     val questions = new InputReader(new File(config.getString("inputFile"))).questions
 
-    val choiceMap = Map(1 -> 'A', 2 -> 'B', 3 -> 'C', 4 -> 'D')
     // Query IR for multiple data bases
     val indexNames = config.getStringList("indexNames").asScala
+
 
     // Load the lucene indexes
     val ixFactory = new IndexFactory(new File(config.getString("luceneDir")))
     val indexes = for(indexName <- indexNames) yield {
-        ixFactory.get(indexName)
+        ixFactory.get(indexName, config)
     }
+
+    // Instantiate the ranker
+    val ranker = new RankerFactory(config).get(config.getString("ranker"))
 
     // Create the output files, one per index
     val outputFiles = (for(indexName <- indexNames) yield {
-        (indexName -> new FileWriter(new File(outputDir, indexName)))
+        (indexName -> new FileWriter(new File(rankerOutputDir, s"${ranker}_$indexName.out")))
     }).toMap
-
-    // Instantiate the ranker
-    val ranker = RankerFactory.get(config.getString("ranker"))
 
     // Do the mojo
     for{
-        question <- questions
         index <- indexes
     }  {
-        // Expand the question/answers into feature vectors
-        val featureVectors = FeatureExtractor.makeDataPoint(question, index)
+        println(s"Ranking with index ${index.name}")
         // Rank them
-        val rankedVectors = ranker.rerank(featureVectors)
+        val rankedQuestions = ranker.rerank(questions, index)
 
         // Write the results to TSV files on disk
         val file = outputFiles(index.name)
-        file.write(s"${question.id}\t${choiceMap(rankedVectors(0).answerChoince)}\n")
+        // TODO: Output the files for the voter
+        for(question <- rankedQuestions){
+          val choice = question.rightChoice match {
+            case Some(c) => c
+            case None => -1
+          }
+          file.write(s"${question.id}\t$choice\n")
+        }
     }
 
     // Don't forget to close the files!!
