@@ -126,7 +126,7 @@ object TrainIRRanker extends App {
   val reader = new InputReader(new File(config.getString("trainingFile")))
 
   println("Loading IR Index...")
-  val index = new WikipediaIndex("simple_wiki", config)
+  val index = new WikipediaIndex(indexName, config)
 
   println("Training...")
   ranker.train(reader.questions, index, Some(outFile))

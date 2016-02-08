@@ -20,7 +20,7 @@ class IndexFactory(dir:File){
     def get(name:String, config:Config):IRIndex = {
         name match {
             case "simple_wiki" => new WikipediaIndex(name, config)
-            case "wiki" => new WikipediaIndex(name, config)
+            case "en_wiki" => new WikipediaIndex(name, config)
             case _ => throw new RuntimeException(s"$name is not a valid index type")
         }
     }
