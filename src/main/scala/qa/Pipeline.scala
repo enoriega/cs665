@@ -40,11 +40,12 @@ object Pipeline extends App {
     }
 
     // Instantiate the ranker
-    val ranker = new RankerFactory(config).get(config.getString("ranker"))
+    val rankerName = config.getString("ranker")
+    val ranker = new RankerFactory(config).get(rankerName)
 
     // Create the output files, one per index
     val outputFiles = (for(indexName <- indexNames) yield {
-        (indexName -> new FileWriter(new File(rankerOutputDir, s"${ranker}_$indexName.out")))
+        (indexName -> new FileWriter(new File(rankerOutputDir, s"${rankerName}_$indexName.out")))
     }).toMap
 
     // Do the mojo
