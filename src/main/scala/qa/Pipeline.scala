@@ -57,13 +57,13 @@ object Pipeline extends App {
 
         // Write the results to TSV files on disk
         val file = outputFiles(index.name)
-        // TODO: Output the files for the voter
-        for(question <- rankedQuestions){
-          val choice = question.rightChoice match {
-            case Some(c) => c
-            case None => -1
-          }
-          file.write(s"${question.id}\t$choice\n")
+        // Output the files for the voter
+        for(
+            (question, qi) <- rankedQuestions.zipWithIndex;
+            (choice, ci) <- question.choices.zipWithIndex
+          ){
+          // Format: Question Index \t Answer Index \t Numeric score
+          file.write(s"$qi\t$ci\t${choice._2}\n")
         }
     }
 

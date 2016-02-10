@@ -42,7 +42,9 @@ class IRRanker(config:Config) extends Ranker{
 
     for((q, r) <- questions zip results) yield {
       val prediction = r.indexOf(r.max)
-      Question(q.id, q.question, q.choices, Some(prediction))
+      // Plug svm_rank numerical score into the choices of the question object
+      val newChoices = q.choices.zip(r).map{case (choice, score) => (choice._1, score)}
+      Question(q.id, q.question, newChoices, Some(prediction))
     }
   }
 
