@@ -84,29 +84,35 @@ class IRRanker(config:Config) extends Ranker{
   }
 
   // Creates a sequence of lines in svm_rank file from a seq of questions
-  private def questions2svmRankLines(q:Seq[Question], index:IRIndex) = {
-    val ret = for((question, id) <- q.zipWithIndex) yield {
+  private def questions2svmRankLines(q:Seq[Question], index:IRIndex):Seq[String] = {
+
+    val choices = q.map(question => (question.id -> question.rightChoice.getOrElse(-1))).toMap
+
+    val points = (for(question <- q) yield {
 
         val choice = question.rightChoice match {
           case Some(i) => i
           case None => 0 // In case this is testing data
         }
 
-        val points = makeDataPoint(question, index)
+        makeDataPoints(question, index)
+    }).flatten
 
-        for(point <- points) yield {
-          val target = if(point.answerChoice == choice) 2 else 1
+    // Normalize the data points
+    val maxVals = points.map(_.features).transpose.map(_.max)
 
-          val sb = new StringBuilder(s"$target qid:$id")
+    for(point <- points) yield {
+      val target = if(point.answerChoice == choices(point.questionId)) 2 else 1
 
-          for((feature, j) <- point.features.zipWithIndex){
-            sb ++= s" ${j+1}:$feature"
-          }
+      val sb = new StringBuilder(s"$target qid:${point.questionId}")
 
-          sb.toString
-        }
+      for((feature, j) <- point.features.zipWithIndex){
+        // Divide by its max!!
+        sb ++= s" ${j+1}:${feature/maxVals(j)}"
+      }
+
+      sb.toString
     }
-    ret.flatten
   }
 
 }

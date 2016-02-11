@@ -38,6 +38,8 @@ class WikipediaIndex(name:String, config:Config) extends IRIndex(name, config) {
       }
     )
   }
+
+  def numDocs:Int = indexReader.numDocs()
 }
 
 // Index the wikipedia with Lucene
