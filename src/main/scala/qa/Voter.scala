@@ -19,7 +19,7 @@ object Voter {
   val processor = new FastNLPProcessor(withDiscourse = false)
   val questionFilter = new QuestionFilter
 
-  def castVotes(questions: Array[KaggleQuestion], rankers:Array[Ranker], method:String = "single"): Array[(Int, Int)] = {
+  def castVotes(questions: Array[KaggleQuestion], rankers:Array[Ranker], method:String): Array[(Int, Int)] = {
 
     val numQuestions = questions.length
     val selections = new Array[(Int, Int)](numQuestions)
@@ -295,7 +295,8 @@ object Voter {
     val questions = loadQuestions(props.getProperty("questions"))
     val qIDLexicon = buildQIDLexicon(questions)
     val rankers = loadRankers(props, qIDLexicon)
-    val selections = castVotes(questions, rankers, method = "single")
+    val method = props.getProperty("method")
+    val selections = castVotes(questions, rankers, method)
 
     // Save the selections in the correct format
     val submissionCSVFilename = props.getProperty("submission_filename")
