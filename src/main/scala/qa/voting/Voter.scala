@@ -1,25 +1,27 @@
-package qa
+package qa.voting
 
 import java.io.PrintWriter
 import java.util.Properties
 
 import edu.arizona.sista.processors.fastnlp.FastNLPProcessor
 import edu.arizona.sista.struct.Lexicon
-import edu.arizona.sista.utils.StringUtils
 
 import scala.collection.mutable.ArrayBuffer
 import scala.util.Random
+import java.io.File
+import com.typesafe.config.{ConfigFactory, Config}
+
 
 /**
   * Created by bsharp on 2/3/16.
   */
 class Voter {}
 
-object Voter {
-  val processor = new FastNLPProcessor(withDiscourse = false)
+object Voter extends App {
+  //val processor = new FastNLPProcessor(withDiscourse = false)
   val questionFilter = new QuestionFilter
 
-  def castVotes(questions: Array[KaggleQuestion], rankers:Array[Ranker], method:String = "single"): Array[(Int, Int)] = {
+  def castVotes(questions: Array[KaggleQuestion], rankers:Seq[Ranker], method:String = "single"): Array[(Int, Int)] = {
 
     val numQuestions = questions.length
     val selections = new Array[(Int, Int)](numQuestions)
@@ -263,22 +265,12 @@ object Voter {
     out.toArray
   }
 
-  def loadRankers (props:Properties, lexicon: Lexicon[Int]): Array[Ranker] = {
-    val rankers = new ArrayBuffer[Ranker]
-
-    val nRankers = StringUtils.getInt(props, "maxrankers", 10)
-    for (i <- 1 to nRankers) {
-      val enabled = StringUtils.getBool(props, s"ranker.$i.enabled", false)
-      val rankerPrefix = props.getProperty(s"ranker.$i.prefix", "NULL_PREFIX")
-      if (enabled) {
-        val rankerTSVFile = props.getProperty(s"ranker.$i.tsv")
-        val rankerScores = parseTSV(rankerTSVFile, lexicon)
-        rankers.append(new Ranker(rankerScores))
-        println (s"Appended Ranker $i: $rankerPrefix")
-      }
+  def loadRankers (config:Config, lexicon: Lexicon[Int]): Seq[Ranker] = {
+    for(f <- new File(config.getString("rankerOutputDir")).listFiles) yield {
+      val rankerScores = parseTSV(f.getCanonicalPath, lexicon)
+      println(s"Using ranks of ${f.getName}")
+      new Ranker(rankerScores)
     }
-
-    rankers.toArray
   }
 
   def buildQIDLexicon (questions: Array[KaggleQuestion]): Lexicon[Int] = {
@@ -289,21 +281,24 @@ object Voter {
 
 
 
-  def main(args:Array[String]): Unit = {
-    val props = StringUtils.argsToProperties(args)
-
-    val questions = loadQuestions(props.getProperty("questions"))
-    val qIDLexicon = buildQIDLexicon(questions)
-    val rankers = loadRankers(props, qIDLexicon)
-    val selections = castVotes(questions, rankers, method = "single")
-
-    // Save the selections in the correct format
-    val submissionCSVFilename = props.getProperty("submission_filename")
-    saveSubmissionCSV(selections, submissionCSVFilename)
+  // Main method
+  val config =
+      if (args.isEmpty) ConfigFactory.load()
+      else ConfigFactory.parseFile(new File(args(0))).resolve()
 
 
+  val questions = loadQuestions(config.getString("voter.questions"))
+  val qIDLexicon = buildQIDLexicon(questions)
+  val rankers = loadRankers(config, qIDLexicon)
+  val selections = castVotes(questions, rankers, method = "single")
 
-  }
+  // Save the selections in the correct format
+  val submissionCSVFilename = config.getString("voter.submission_filename")
+  //saveSubmissionCSV(selections, submissionCSVFilename)
+  ///////////////////////////
+
+
+
 }
 
 class Ranker (val scores: Array[Array[Double]])
