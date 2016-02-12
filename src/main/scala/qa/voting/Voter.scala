@@ -293,8 +293,8 @@ object Voter extends App {
   val selections = castVotes(questions, rankers, method = "single")
 
   // Save the selections in the correct format
-  val submissionCSVFilename = config.getString("voter.submission_filename")
-  //saveSubmissionCSV(selections, submissionCSVFilename)
+  val submissionCSVFilename = new File(config.getString("voter.submission_filename"))
+  saveSubmissionCSV(selections, submissionCSVFilename.getCanonicalPath)
   ///////////////////////////
 
 
