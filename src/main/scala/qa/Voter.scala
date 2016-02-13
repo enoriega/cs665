@@ -25,6 +25,9 @@ object Voter {
     val selections = new Array[(Int, Int)](numQuestions)
     var precisionAt1:Double = 0.0
 
+    // Get the voteScales for each ranker
+    val voteScales = rankers.map(r => EnsembleUtils.rankPrecisions(questions, r.scores))
+
     println (s"Casting votes for $numQuestions questions from ${rankers.length} rankers...")
 
     // For each question
@@ -50,9 +53,10 @@ object Voter {
         val voteTally = Array.fill[Double](numAns)(0.0)
 
         // Have rankers cast votes
-        for (ranker <- rankers) {
+        for (rID <- rankers.indices) {
+          val ranker = rankers(rID)
           val scores = ranker.scores(i)
-          val votes = getVotes(scores, method)
+          val votes = getVotes(scores, method, voteScales(rID))
           // Add the vote(s) for the ranker to the overall tally for the question
           for (j <- votes.indices) voteTally(j) += votes(j)
         }
@@ -82,7 +86,7 @@ object Voter {
 
         // Calculate the P@1 for question:
         if (chosen.contains(correct)) precisionAt1 += (1.0 / chosen.length.toDouble) / numQuestions.toDouble
-        else println (s"Failed to answer question $i correctly.  (Chosen = ${chosen.mkString(",")}, correct = ${correct})")
+        //else println (s"Failed to answer question $i correctly.  (Chosen = ${chosen.mkString(",")}, correct = ${correct})")
 
       }
 
@@ -94,9 +98,10 @@ object Voter {
     selections
   }
 
-  def getVotes(scoresIn:Array[Double], votingMethod:String):Array[Double] = {
+  def getVotes(scoresIn:Array[Double], votingMethod:String, voteScale:Array[Double]):Array[Double] = {
     val votes = new Array[Double](scoresIn.size)
-    val voteScale = Array[Double](4.0, 3.0, 2.0, 1.0)
+    //val voteScale = Array[Double](4.0, 3.0, 2.0, 1.0)
+
     val (ties, sorted) = findTies(scoresIn)
     val topScoreIndices = getSelectedAnswers(scoresIn)
 
@@ -218,6 +223,7 @@ object Voter {
     var questionCounter:Int = 0
 
     for (line <- lines) {
+      //println (line)
       val fields = line.split("\t")
       assert (fields.length == 3)
       var qid = fields(0).toInt
@@ -232,7 +238,7 @@ object Voter {
         questionCounter += 1
       }
 
-      out(qid)(aid) = score
+      if (aid < 4) out(qid)(aid) = score
 
     }
 
@@ -249,7 +255,7 @@ object Voter {
 
     val lines = scala.io.Source.fromFile(filename, "UTF-8").getLines().toList
     for (line <- lines.slice(1, lines.length)) {
-      println (line)
+      //println (line)
       val fields = line.split("\t")
       val qid = fields(0).toInt
       val qText = fields(1)
@@ -273,7 +279,7 @@ object Voter {
       if (enabled) {
         val rankerTSVFile = props.getProperty(s"ranker.$i.tsv")
         val rankerScores = parseTSV(rankerTSVFile, lexicon)
-        rankers.append(new Ranker(rankerScores))
+        rankers.append(new Ranker(rankerScores, rankerPrefix))
         println (s"Appended Ranker $i: $rankerPrefix")
       }
     }
@@ -295,6 +301,12 @@ object Voter {
     val questions = loadQuestions(props.getProperty("questions"))
     val qIDLexicon = buildQIDLexicon(questions)
     val rankers = loadRankers(props, qIDLexicon)
+    // Check the rank precision for each ranker:
+    for (r <- rankers) {
+      println ("Checking rank precision for " + r.name + "... ")
+      EnsembleUtils.rankPrecisions(questions, r.scores)
+    }
+
     val method = props.getProperty("method")
     val selections = castVotes(questions, rankers, method)
 
@@ -307,7 +319,7 @@ object Voter {
   }
 }
 
-class Ranker (val scores: Array[Array[Double]])
+class Ranker (val scores: Array[Array[Double]], val name: String = "noname")
 
 class KaggleQuestion(val id:Int, val text:String, val correct:Int, val choices:Array[Answer])
 
