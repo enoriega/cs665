@@ -57,6 +57,7 @@ object Voter {
           val ranker = rankers(rID)
           val scores = ranker.scores(i)
           val votes = getVotes(scores, method, voteScales(rID))
+          //val votes = getVotes(scores, method, Array(4.0, 3.0, 2.0, 1.0))
           // Add the vote(s) for the ranker to the overall tally for the question
           for (j <- votes.indices) voteTally(j) += votes(j)
         }
@@ -215,7 +216,7 @@ object Voter {
 
   def parseTSV (tsv:String, lexicon: Lexicon[Int]): Array[Array[Double]] = {
     println ("Loading scores from " + tsv)
-
+    val answerChoices = Array("A", "B", "C", "D")
     val out = new ArrayBuffer[Array[Double]]
 
     val lines = scala.io.Source.fromFile(tsv, "UTF-8").getLines().toList
@@ -228,8 +229,10 @@ object Voter {
       assert (fields.length == 3)
       var qid = fields(0).toInt
       // If the tsv is in the Sia format - replace the qIndex with the qID
-      if (qid > 9000) qid = lexicon.get(qid)
-      val aid = fields(1).toInt
+      if (qid > 9000) qid = lexicon.add(qid)
+
+      val aidRaw = fields(1)
+      val aid = if (answerChoices.contains(aidRaw)) answerChoices.indexOf(aidRaw) else aidRaw.toInt
       val score = fields(2).toDouble
 
       // Add a new "row" for next question
@@ -289,7 +292,11 @@ object Voter {
 
   def buildQIDLexicon (questions: Array[KaggleQuestion]): Lexicon[Int] = {
     val lexicon = new Lexicon[Int]
-    for (q <- questions) lexicon.add(q.id)
+    for (q <- questions) {
+      lexicon.add(q.id)
+      //println ("Added " + q.id + " to lexicon.")
+    }
+
     lexicon
   }
 
