@@ -25,9 +25,6 @@ object Voter {
     val selections = new Array[(Int, Int)](numQuestions)
     var precisionAt1:Double = 0.0
 
-    // Get the voteScales for each ranker
-    val voteScales = rankers.map(r => EnsembleUtils.rankPrecisions(questions, r.scores))
-
     println (s"Casting votes for $numQuestions questions from ${rankers.length} rankers...")
 
     // For each question
@@ -56,8 +53,8 @@ object Voter {
         for (rID <- rankers.indices) {
           val ranker = rankers(rID)
           val scores = ranker.scores(i)
-          val votes = getVotes(scores, method, voteScales(rID))
-          //val votes = getVotes(scores, method, Array(4.0, 3.0, 2.0, 1.0))
+          val votes = getVotes(scores, method, ranker.votingScale)
+//          val votes = getVotes(scores, method, Array(4.0, 3.0, 2.0, 1.0))
           // Add the vote(s) for the ranker to the overall tally for the question
           for (j <- votes.indices) voteTally(j) += votes(j)
         }
@@ -272,7 +269,7 @@ object Voter {
     out.toArray
   }
 
-  def loadRankers (props:Properties, lexicon: Lexicon[Int]): Array[Ranker] = {
+  def loadRankers (props:Properties, lexicon: Lexicon[Int], questions: Array[KaggleQuestion]): Array[Ranker] = {
     val rankers = new ArrayBuffer[Ranker]
 
     val nRankers = StringUtils.getInt(props, "maxrankers", 10)
@@ -282,7 +279,14 @@ object Voter {
       if (enabled) {
         val rankerTSVFile = props.getProperty(s"ranker.$i.tsv")
         val rankerScores = parseTSV(rankerTSVFile, lexicon)
-        rankers.append(new Ranker(rankerScores, rankerPrefix))
+        val currRanker = new Ranker(rankerScores, rankerPrefix)
+
+        // Find the voting scale for the ranker
+        val rankerDevTSVFile = props.getProperty(s"ranker.$i.tsv.dev")
+        val rankerDevScores = parseTSV(rankerDevTSVFile, lexicon)
+        currRanker.votingScale = EnsembleUtils.rankPrecisions(questions, rankerDevScores)
+
+        rankers.append(currRanker)
         println (s"Appended Ranker $i: $rankerPrefix")
       }
     }
@@ -306,12 +310,19 @@ object Voter {
     val props = StringUtils.argsToProperties(args)
 
     val questions = loadQuestions(props.getProperty("questions"))
+    // The dev questions should be the 506, and should align with the ranker.i.tsv.dev ranking file for determining the
+    // voting scale
+    val devQFilename = props.getProperty("questions.dev", "NONE")
+    // If you are running only over the 506, then these are just the regular questions
+    val devQuestions = if (devQFilename == "NONE") questions else loadQuestions(devQFilename)
     val qIDLexicon = buildQIDLexicon(questions)
-    val rankers = loadRankers(props, qIDLexicon)
-    // Check the rank precision for each ranker:
+
+    // Loads up the rankers and also calculates the voting scale based on the 506 dev questions
+    val rankers = loadRankers(props, qIDLexicon, devQuestions)
+
+    // Display the rank precision for each ranker:
     for (r <- rankers) {
-      println ("Checking rank precision for " + r.name + "... ")
-      EnsembleUtils.rankPrecisions(questions, r.scores)
+      println ("Rank precision for " + r.name + "... [" + r.votingScale.mkString(", ") + "]")
     }
 
     val method = props.getProperty("method")
@@ -326,7 +337,9 @@ object Voter {
   }
 }
 
-class Ranker (val scores: Array[Array[Double]], val name: String = "noname")
+class Ranker (val scores: Array[Array[Double]], val name: String = "noname") {
+  var votingScale = Array.fill[Double](4)(0.0)
+}
 
 class KaggleQuestion(val id:Int, val text:String, val correct:Int, val choices:Array[Answer])
 
