@@ -1,4 +1,4 @@
-package qa
+package qa.voting
 
 import java.io.PrintWriter
 import java.util.Properties
@@ -6,6 +6,7 @@ import java.util.Properties
 import edu.arizona.sista.processors.fastnlp.FastNLPProcessor
 import edu.arizona.sista.struct.Lexicon
 import edu.arizona.sista.utils.StringUtils
+import qa.QuestionFilter
 
 import scala.collection.mutable.ArrayBuffer
 import scala.util.Random
@@ -341,6 +342,8 @@ class Ranker (val scores: Array[Array[Double]], val name: String = "noname") {
   var votingScale = Array.fill[Double](4)(0.0)
 }
 
-class KaggleQuestion(val id:Int, val text:String, val correct:Int, val choices:Array[Answer])
+class KaggleQuestion(val id:Int, val text:String, val correct:Int, val choices:Array[Answer]) {
+  override def toString(): String = text + "\t" + correct + "\t" + choices.map(_.text).mkString("\t")
+}
 
 class Answer (val text:String)

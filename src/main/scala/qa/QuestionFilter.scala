@@ -1,5 +1,7 @@
 package qa
 
+import qa.voting.KaggleQuestion
+
 /**
   * Created by bsharp on 2/5/16.
   */

@@ -1,4 +1,4 @@
-package qa
+package qa.voting
 
 import scala.collection.mutable.ArrayBuffer
 
