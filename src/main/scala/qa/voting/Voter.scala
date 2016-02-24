@@ -5,11 +5,13 @@ import java.util.Properties
 
 import edu.arizona.sista.processors.fastnlp.FastNLPProcessor
 import edu.arizona.sista.struct.Lexicon
+import edu.arizona.sista.utils.StringUtils
 
 import scala.collection.mutable.ArrayBuffer
 import scala.util.Random
 import java.io.File
 import com.typesafe.config.{ConfigFactory, Config}
+import qa.input._
 
 
 /**
@@ -21,7 +23,7 @@ object Voter extends App {
   //val processor = new FastNLPProcessor(withDiscourse = false)
   val questionFilter = new QuestionFilter
 
-  def castVotes(questions: Array[KaggleQuestion], rankers:Seq[Ranker], method:String = "single"): Array[(Int, Int)] = {
+  def castVotes(questions: Seq[Question], rankers:Seq[Ranker], method:String): Seq[(Int, Int)] = {
 
     val numQuestions = questions.length
     val selections = new Array[(Int, Int)](numQuestions)
@@ -32,7 +34,7 @@ object Voter extends App {
     // For each question
     for (i <- questions.indices) {
       val qid = questions(i).id
-      val correct = questions(i).correct
+      val correct = questions(i).rightChoice.getOrElse(0)
       val numAns = questions(i).choices.length
 
       val filterOut = questionFilter.mainFilter(questions(i))
@@ -52,9 +54,11 @@ object Voter extends App {
         val voteTally = Array.fill[Double](numAns)(0.0)
 
         // Have rankers cast votes
-        for (ranker <- rankers) {
+        for (rID <- rankers.indices) {
+          val ranker = rankers(rID)
           val scores = ranker.scores(i)
-          val votes = getVotes(scores, method)
+          val votes = getVotes(scores, method, ranker.votingScale)
+//          val votes = getVotes(scores, method, Array(4.0, 3.0, 2.0, 1.0))
           // Add the vote(s) for the ranker to the overall tally for the question
           for (j <- votes.indices) voteTally(j) += votes(j)
         }
@@ -84,7 +88,7 @@ object Voter extends App {
 
         // Calculate the P@1 for question:
         if (chosen.contains(correct)) precisionAt1 += (1.0 / chosen.length.toDouble) / numQuestions.toDouble
-        else println (s"Failed to answer question $i correctly.  (Chosen = ${chosen.mkString(",")}, correct = ${correct})")
+        //else println (s"Failed to answer question $i correctly.  (Chosen = ${chosen.mkString(",")}, correct = ${correct})")
 
       }
 
@@ -96,9 +100,10 @@ object Voter extends App {
     selections
   }
 
-  def getVotes(scoresIn:Array[Double], votingMethod:String):Array[Double] = {
+  def getVotes(scoresIn:Seq[Double], votingMethod:String, voteScale:Seq[Double]):Seq[Double] = {
     val votes = new Array[Double](scoresIn.size)
-    val voteScale = Array[Double](4.0, 3.0, 2.0, 1.0)
+    //val voteScale = Array[Double](4.0, 3.0, 2.0, 1.0)
+
     val (ties, sorted) = findTies(scoresIn)
     val topScoreIndices = getSelectedAnswers(scoresIn)
 
@@ -135,7 +140,7 @@ object Voter extends App {
   }
 
   // Returns all of the indices that are tied for the top answer score
-  def getSelectedAnswers(in:Array[Double]):Array[Int] = {
+  def getSelectedAnswers(in:Seq[Double]):Seq[Int] = {
     val sorted = in.zipWithIndex.sortBy(- _._1)
     // Check for ties
     val topScore = sorted(0)._1
@@ -148,15 +153,15 @@ object Voter extends App {
     topScoreIndices.toArray
   }
 
-  def findTies(scores:Array[Double]):(Array[(Array[Int], Int)], Array[(Double, Int)]) = {
+  def findTies(scores:Seq[Double]):(Seq[(Seq[Int], Int)], Seq[(Double, Int)]) = {
     val sorted = scores.zipWithIndex.sortBy(- _._1)
     val ties = findTies(sorted)
     (ties, sorted)
   }
 
 
-  def findTies(sortedScores:Array[(Double, Int)]):Array[(Array[Int], Int)] = {
-    val out = new ArrayBuffer[(Array[Int], Int)]
+  def findTies(sortedScores:Seq[(Double, Int)]):Seq[(Seq[Int], Int)] = {
+    val out = new ArrayBuffer[(Seq[Int], Int)]
 
     var i:Int = 0
     var tieGroupOffset:Int = 0
@@ -188,7 +193,7 @@ object Voter extends App {
       i += 1
     }
 
-    out.toArray
+    out.toSeq
   }
 
 
@@ -197,7 +202,7 @@ object Voter extends App {
    * Loading/Saving methods
    */
 
-  def saveSubmissionCSV (selections: Array[(Int, Int)], filename:String): Unit = {
+  def saveSubmissionCSV (selections: Seq[(Int, Int)], filename:String): Unit = {
     val answerLabels = Array("A", "B", "C", "D")
 
     val pw = new PrintWriter(filename)
@@ -210,9 +215,9 @@ object Voter extends App {
     pw.close()
   }
 
-  def parseTSV (tsv:String, lexicon: Lexicon[Int]): Array[Array[Double]] = {
+  def parseTSV (tsv:String, lexicon: Lexicon[Int]): Seq[Seq[Double]] = {
     println ("Loading scores from " + tsv)
-
+    val answerChoices = Array("A", "B", "C", "D")
     val out = new ArrayBuffer[Array[Double]]
 
     val lines = scala.io.Source.fromFile(tsv, "UTF-8").getLines().toList
@@ -220,12 +225,15 @@ object Voter extends App {
     var questionCounter:Int = 0
 
     for (line <- lines) {
+      //println (line)
       val fields = line.split("\t")
       assert (fields.length == 3)
       var qid = fields(0).toInt
       // If the tsv is in the Sia format - replace the qIndex with the qID
-      if (qid > 9000) qid = lexicon.get(qid)
-      val aid = fields(1).toInt
+      if (qid > 9000) qid = lexicon.add(qid)
+
+      val aidRaw = fields(1)
+      val aid = if (answerChoices.contains(aidRaw)) answerChoices.indexOf(aidRaw) else aidRaw.toInt
       val score = fields(2).toDouble
 
       // Add a new "row" for next question
@@ -234,48 +242,44 @@ object Voter extends App {
         questionCounter += 1
       }
 
-      out(qid)(aid) = score
+      if (aid < 4) out(qid)(aid) = score
 
     }
 
-    out.toArray
+    out.toSeq map (_.toSeq)
   }
 
+  def loadRankers (conf:Config, lexicon: Lexicon[Int], questions: Seq[Question]): Seq[Ranker] = {
+    val rankers = new ArrayBuffer[Ranker]
 
-  def loadQuestions (filename:String): Array[KaggleQuestion] = {
+    val nRankers = config.getInt("voter.maxRankers")
+    for (i <- 1 to nRankers) {
+      val enabled = config.getBoolean(s"voter.rankers.$i.enabled")
+      val rankerPrefix = config.getString(s"voter.rankers.$i.prefix")
+      if (enabled) {
+        val rankerTSVFile = config.getString(s"voter.ranker.$i.tsv")
+        val rankerScores = parseTSV(rankerTSVFile, lexicon)
+        val currRanker = new Ranker(rankerScores, rankerPrefix)
 
-    println ("Loading questions from " + filename + "...")
-    val out = new ArrayBuffer[KaggleQuestion]
+        // Find the voting scale for the ranker
+        val rankerDevTSVFile = config.getString(s"voter.ranker.$i.tsv_dev")
+        val rankerDevScores = parseTSV(rankerDevTSVFile, lexicon)
+        currRanker.votingScale = EnsembleUtils.rankPrecisions(questions, rankerDevScores)
 
-    val answerLabels = Array("A", "B", "C", "D")
-
-    val lines = scala.io.Source.fromFile(filename, "UTF-8").getLines().toList
-    for (line <- lines.slice(1, lines.length)) {
-      println (line)
-      val fields = line.split("\t")
-      val qid = fields(0).toInt
-      val qText = fields(1)
-      val correct = if (fields.length == 7) answerLabels.indexOf(fields(2)) else -1
-      val answerTexts = if (fields.length == 7) fields.slice(3, 7) else fields.slice(2, 6)
-      val answers = answerTexts.map(s => new Answer(s))
-      out.append(new KaggleQuestion(qid, qText, correct, answers))
+        rankers.append(currRanker)
+        println (s"Appended Ranker $i: $rankerPrefix")
+      }
     }
-
-    println ("Finished loading " + out.length + " questions.")
-    out.toArray
+    rankers
   }
 
-  def loadRankers (config:Config, lexicon: Lexicon[Int]): Seq[Ranker] = {
-    for(f <- new File(config.getString("rankerOutputDir")).listFiles) yield {
-      val rankerScores = parseTSV(f.getCanonicalPath, lexicon)
-      println(s"Using ranks of ${f.getName}")
-      new Ranker(rankerScores)
-    }
-  }
-
-  def buildQIDLexicon (questions: Array[KaggleQuestion]): Lexicon[Int] = {
+  def buildQIDLexicon (questions: Seq[Question]): Lexicon[Int] = {
     val lexicon = new Lexicon[Int]
-    for (q <- questions) lexicon.add(q.id)
+    for (q <- questions) {
+      lexicon.add(q.id)
+      //println ("Added " + q.id + " to lexicon.")
+    }
+
     lexicon
   }
 
@@ -286,14 +290,29 @@ object Voter extends App {
       if (args.isEmpty) ConfigFactory.load()
       else ConfigFactory.parseFile(new File(args(0))).resolve()
 
+  val questions = new InputReader(new File(config.getString("voter.questions"))).questions
+  // The dev questions should be the 506, and should align with the ranker.i.tsv.dev ranking file for determining the
+  // voting scale
 
-  val questions = loadQuestions(config.getString("voter.questions"))
+  // If you are running only over the 506, then these are just the regular questions
+  val devQuestions = new InputReader(new File(config.getString("voter.questions_dev"))).questions
   val qIDLexicon = buildQIDLexicon(questions)
-  val rankers = loadRankers(config, qIDLexicon)
-  val selections = castVotes(questions, rankers, method = "single")
+
+  // Loads up the rankers and also calculates the voting scale based on the 506 dev questions
+  val rankers = loadRankers(config, qIDLexicon, devQuestions)
+
+  val method = config.getString("voter.method")
+
+  // Display the rank precision for each ranker:
+  for (r <- rankers) {
+    println ("Rank precision for " + r.name + "... [" + r.votingScale.mkString(", ") + "]")
+  }
+
+
+  val selections = castVotes(questions, rankers, method)
 
   // Save the selections in the correct format
-  val submissionCSVFilename = new File(config.getString("voter.submission_filename"))
+  val submissionCSVFilename = new File(config.getString("voter.submissionFilename"))
   saveSubmissionCSV(selections, submissionCSVFilename.getCanonicalPath)
   ///////////////////////////
 
@@ -301,8 +320,6 @@ object Voter extends App {
 
 }
 
-class Ranker (val scores: Array[Array[Double]])
-
-class KaggleQuestion(val id:Int, val text:String, val correct:Int, val choices:Array[Answer])
-
-class Answer (val text:String)
+class Ranker (val scores: Seq[Seq[Double]], val name: String = "noname") {
+  var votingScale:Seq[Double] = Array.fill[Double](4)(0.0)
+}

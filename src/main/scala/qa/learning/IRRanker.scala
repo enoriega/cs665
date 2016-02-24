@@ -43,7 +43,7 @@ class IRRanker(config:Config) extends Ranker{
     for((q, r) <- questions zip results) yield {
       val prediction = r.indexOf(r.max)
       // Plug svm_rank numerical score into the choices of the question object
-      val newChoices = q.choices.zip(r).map{case (choice, score) => (choice._1, score)}
+      val newChoices = q.choices.zip(r).map{case (choice, score) => Answer(choice.text, score)}
       Question(q.id, q.question, newChoices, Some(prediction))
     }
   }
@@ -86,7 +86,7 @@ class IRRanker(config:Config) extends Ranker{
   // Creates a sequence of lines in svm_rank file from a seq of questions
   private def questions2svmRankLines(q:Seq[Question], index:IRIndex):Seq[String] = {
 
-    val choices = q.map(question => (question.id -> question.rightChoice.getOrElse(-1))).toMap
+    val choices:Map[Int, Int] = q.map(question => (question.id -> question.rightChoice.getOrElse(-1))).toMap
 
     val points = (for(question <- q) yield {
 

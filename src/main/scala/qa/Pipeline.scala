@@ -1,7 +1,7 @@
 package qa
 
 import scala.collection.JavaConverters._
-import qa.input.InputReader
+import qa.input._
 import qa.ir._
 import qa.learning._
 import java.io.{File, FileWriter}
@@ -64,7 +64,7 @@ object Pipeline extends App {
             (choice, ci) <- question.choices.zipWithIndex
           ){
           // Format: Question Index \t Answer Index \t Numeric score
-          file.write(s"$qi\t$ci\t${choice._2}\n")
+          file.write(s"$qi\t$ci\t${choice.score}\n")
         }
     }
 
