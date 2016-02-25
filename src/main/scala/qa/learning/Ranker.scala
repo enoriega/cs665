@@ -12,9 +12,9 @@ trait Ranker{
     def makeDataPoints(question:Question, index:IRIndex):Seq[DataPoint] = {
         // Unwind the question object into question/answer pairs to do retrival
         for((choice, ix) <- question.choices.zipWithIndex) yield {
-            val queryRes = index.query(question.question, choice._1)
-            val features = createFeatureVector(question.question, choice._1, queryRes)
-            DataPoint(ix, question.id, question.question, choice._1, features, 0)
+            val queryRes = index.query(question.question, choice.text)
+            val features = createFeatureVector(question.question, choice.text, queryRes)
+            DataPoint(ix, question.id, question.question, choice.text, features, 0)
         }
     }
 
