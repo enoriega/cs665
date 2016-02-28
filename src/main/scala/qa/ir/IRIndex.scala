@@ -8,7 +8,7 @@ import qa.input.Question
 case class Document(val text:String, val score:Double)
 
 // Result of the query
-case class QueryResult(numResults:Int, maxScore:Double, topDocs:Seq[Document])
+case class QueryResult(numResults:Int, docsInIndex:Int, maxScore:Double, topDocs:Seq[Document])
 
 // API to query an index
 abstract class IRIndex(val name:String, config:Config){

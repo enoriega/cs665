@@ -53,8 +53,22 @@ class IRRanker(config:Config) extends Ranker{
   // Generates features out of the IR query
   def createFeatureVector(question:String,
        choice:String, queryRes:QueryResult):Seq[Double] = {
-         val sum = queryRes.topDocs.map(_.score).sum
-         Seq(queryRes.numResults, queryRes.maxScore, sum)
+         val avg = queryRes.topDocs.map(_.score).sum / queryRes.docsInIndex
+
+         // Bin the number of scores in quartiles
+         val scores = queryRes.topDocs.map(_.score/queryRes.maxScore)
+         val bins = scores.groupBy{s =>
+            if(s <= .25)
+                1
+            else if(s <= .5)
+                2
+            else if(s <= .75)
+                3
+            else
+                4
+         }.mapValues(_.size)
+
+        Seq(queryRes.numResults, queryRes.maxScore, avg, bins(1), bins(2), bins(3), bins(4))
   }
 
   // Trains svm_rank with this questions given this index
