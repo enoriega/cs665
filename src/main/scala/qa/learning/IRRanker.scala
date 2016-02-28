@@ -1,5 +1,6 @@
 package qa.learning
 
+import scala.io.Source
 import sys.process._
 import java.io.File
 import java.util.UUID
@@ -15,6 +16,7 @@ class IRRanker(config:Config) extends Ranker{
 
   // File with the weights of svm_rank
   var modelFile:File = null
+  var normalizers:Option[Seq[Double]] = None
 
   // Runs svm_classify and resorts the list with the new order
   def rerank(questions:Seq[Question], index:IRIndex):Seq[Question] = {
@@ -22,7 +24,7 @@ class IRRanker(config:Config) extends Ranker{
     val modelFile = new File(config.getString(s"indexes.${index.name}.irModelFile"))
     this.load(modelFile)
 
-    val lines:Seq[String] = questions2svmRankLines(questions, index)
+    val (lines:Seq[String], x:Seq[Double]) = questions2svmRankLines(questions, index, this.normalizers)
 
     // Write them to a training file
     val classificationFile = File.createTempFile(UUID.randomUUID.toString, "rank")
@@ -34,7 +36,7 @@ class IRRanker(config:Config) extends Ranker{
     val exitCode = s"svm_rank_classify ${classificationFile.getCanonicalPath} ${this.modelFile.getCanonicalPath} ${outputFile.getCanonicalPath}".!
 
     if(exitCode != 0){
-      throw new RuntimeException("Error running svm_rank_train!!")
+      throw new RuntimeException("Error running svm_rank_classify!!")
     }
 
     // Fetch the output file and select a choice per question
@@ -56,7 +58,7 @@ class IRRanker(config:Config) extends Ranker{
   }
 
   // Trains svm_rank with this questions given this index
-  def train(questions:Seq[Question], index:IRIndex, outputFile:Option[File] = None){
+  def train(questions:Seq[Question], index:IRIndex, outputFile:Option[File], normalizersFile:Option[File]){
     // Writes an svm_rank training file
     modelFile = outputFile match {
       case Some(f) => f
@@ -64,7 +66,7 @@ class IRRanker(config:Config) extends Ranker{
     }
 
     // Generate a svm_rank_train file from the questions
-    val trainingLines:Seq[String] = questions2svmRankLines(questions, index)
+    val (trainingLines:Seq[String], normalizers:Seq[Double]) = questions2svmRankLines(questions, index)
 
     // Write them to a training file
     val trainingFile = File.createTempFile(UUID.randomUUID.toString, "train")
@@ -79,12 +81,20 @@ class IRRanker(config:Config) extends Ranker{
   }
 
   // "Loads" the model from a file
-  def load(file:File){
+  def load(file:File, normalizersFile:Option[File] = None){
     this.modelFile = file
+
+    // Load the normalizers, a tsv file with the max values seen on training
+    normalizersFile match {
+        case Some(f) =>
+            val s = Source.fromFile(f).getLines.toList.take(1)
+            normalizers = Some(s(0).split('\t').map(_.toDouble))
+        case None => Unit
+    }
   }
 
   // Creates a sequence of lines in svm_rank file from a seq of questions
-  private def questions2svmRankLines(q:Seq[Question], index:IRIndex):Seq[String] = {
+  private def questions2svmRankLines(q:Seq[Question], index:IRIndex, normalizers:Option[Seq[Double]] = None):(Seq[String], Seq[Double]) = {
 
     val choices:Map[Int, Int] = q.map(question => (question.id -> question.rightChoice.getOrElse(-1))).toMap
 
@@ -99,9 +109,12 @@ class IRRanker(config:Config) extends Ranker{
     }).flatten
 
     // Normalize the data points
-    val maxVals = points.map(_.features).transpose.map(_.max)
+    val maxVals:Seq[Double] = normalizers match {
+        case Some(n) => n
+        case None => points.map(_.features).transpose.map(_.max)
+    }
 
-    for(point <- points) yield {
+    val lines = for(point <- points) yield {
       val target = if(point.answerChoice == choices(point.questionId)) 2 else 1
 
       val sb = new StringBuilder(s"$target qid:${point.questionId}")
@@ -111,8 +124,12 @@ class IRRanker(config:Config) extends Ranker{
         sb ++= s" ${j+1}:${feature/maxVals(j)}"
       }
 
+      // First element: A sequence of svm_rank strings
+      // Second element: The normalizers, one per feature
       sb.toString
     }
+
+    (lines, maxVals)
   }
 
 }
