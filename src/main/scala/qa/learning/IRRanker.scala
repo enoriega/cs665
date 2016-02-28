@@ -57,7 +57,7 @@ class IRRanker(config:Config) extends Ranker{
 
          // Bin the number of scores in quartiles
          val scores = queryRes.topDocs.map(_.score/queryRes.maxScore)
-         val bins = scores.groupBy{s =>
+         val bins:Map[Int, Double] = scores.groupBy{s =>
             if(s <= .25)
                 1
             else if(s <= .5)
@@ -66,9 +66,14 @@ class IRRanker(config:Config) extends Ranker{
                 3
             else
                 4
-         }.mapValues(_.size).lift()
+         }.mapValues(_.size.toDouble)
 
-        Seq(queryRes.numResults, queryRes.maxScore, avg, bins.getOrElse(1, 0), bins.getOrElse(2, 0), bins.getOrElse(3, 0), bins.getOrElse(4, 0)
+         val first:Double = if(bins.contains(1)) bins(1) else 0.0
+         val second:Double = if(bins.contains(2)) bins(2) else 0.0
+         val third:Double = if(bins.contains(3)) bins(3) else 0.0
+         val fourth:Double = if(bins.contains(4)) bins(4) else 0.0
+
+        Seq(queryRes.numResults, queryRes.maxScore, avg, first, second, third, fourth)
   }
 
   // Trains svm_rank with this questions given this index
