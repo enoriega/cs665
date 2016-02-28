@@ -66,9 +66,9 @@ class IRRanker(config:Config) extends Ranker{
                 3
             else
                 4
-         }.mapValues(_.size)
+         }.mapValues(_.size).lift()
 
-        Seq(queryRes.numResults, queryRes.maxScore, avg, bins(1), bins(2), bins(3), bins(4))
+        Seq(queryRes.numResults, queryRes.maxScore, avg, bins.getOrElse(1, 0), bins.getOrElse(2, 0), bins.getOrElse(3, 0), bins.getOrElse(4, 0)
   }
 
   // Trains svm_rank with this questions given this index
