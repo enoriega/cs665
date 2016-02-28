@@ -31,7 +31,7 @@ class WikipediaIndex(name:String, config:Config) extends IRIndex(name, config) {
 
     val topDocs = indexSearcher.search(q, topHits);
 
-    QueryResult(topDocs.totalHits, topDocs.getMaxScore,
+    QueryResult(topDocs.totalHits, this.numDocs, topDocs.getMaxScore,
       topDocs.scoreDocs map {
         hit =>
           Document(indexSearcher.doc(hit.doc).get("content"), hit.score)
