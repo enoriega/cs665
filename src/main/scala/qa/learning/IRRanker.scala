@@ -2,7 +2,7 @@ package qa.learning
 
 import scala.io.Source
 import sys.process._
-import java.io.File
+import java.io.{File,PrintWriter}
 import java.util.UUID
 import qa.input._
 import qa.ir._
@@ -22,7 +22,8 @@ class IRRanker(config:Config) extends Ranker{
   def rerank(questions:Seq[Question], index:IRIndex):Seq[Question] = {
     // Load the corresponding model depending on the index's name
     val modelFile = new File(config.getString(s"indexes.${index.name}.irModelFile"))
-    this.load(modelFile)
+    val normalizersFile = new File(config.getString(s"indexes.${index.name}.irModelFile"))
+    this.load(modelFile, Some(normalizersFile))
 
     val (lines:Seq[String], x:Seq[Double]) = questions2svmRankLines(questions, index, this.normalizers)
 
@@ -86,6 +87,15 @@ class IRRanker(config:Config) extends Ranker{
 
     // Generate a svm_rank_train file from the questions
     val (trainingLines:Seq[String], normalizers:Seq[Double]) = questions2svmRankLines(questions, index)
+
+    // Store normalizers
+    normalizersFile match {
+      case Some(f) =>
+        val pw = new PrintWriter(f)
+        pw.write(normalizers.mkString("\t"))
+        pw.close
+      case None => Unit
+    }
 
     // Write them to a training file
     val trainingFile = File.createTempFile(UUID.randomUUID.toString, "train")
@@ -162,6 +172,7 @@ object TrainIRRanker extends App {
 
   val indexName = args(0)
   val outFile = new File(args(1))
+  val normalizersFile = new File(args(2))
 
   val ranker = new IRRanker(config)
   println(s"Training the IR Ranker with ${indexName} and storing the model in ${args(1)}")
@@ -173,7 +184,7 @@ object TrainIRRanker extends App {
   val index = new WikipediaIndex(indexName, config)
 
   println("Training...")
-  ranker.train(reader.questions, index, Some(outFile))
+  ranker.train(reader.questions, index, Some(outFile), Some(normalizersFile))
 
   println("Done.")
 }
