@@ -15,6 +15,12 @@ import qa.voting.Voter._
 
 object BottomUpClassify extends App {
 
+  // Opens a file, reads the questions and divides them into train, dev, and test partitions
+  def generateFoldsFromFile(fn:String):(Seq[Question], Seq[Question]) = {
+    val questions = new InputReader(new File(fn)).qTypeQuestions
+    ???
+  }
+
   // Make a Dataset for training out of the training questions
   def mkRVFDataset(questions:Seq[Question]):RVFDataset[Int, String] = {
     val dataset = new RVFDataset[Int, String]()
@@ -67,7 +73,7 @@ object BottomUpClassify extends App {
     else ConfigFactory.parseFile(new File(args(0))).resolve()
 
   // 1. Load the training dataset
-  val trainQuestions = new InputReader(new File(config.getString("buc.trainQuestions"))).questions
+  val (trainQuestions, testQuestions) = generateFoldsFromFile(config.getString("buc.questions"))
   val trainDataset = mkRVFDataset(trainQuestions)
 
   // 3. Train
@@ -75,7 +81,6 @@ object BottomUpClassify extends App {
   classifier.train(trainDataset)
 
   // 4. Predict
-  val testQuestions = new InputReader(new File(config.getString("buc.testQuestions"))).questions
   val testDatums = testQuestions.map(q => mkDatumFromQuestion(q))
   val predictedLabels = testDatums.map(td => classifier.classOf(td))
 
