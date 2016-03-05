@@ -9,10 +9,7 @@ import qa.input._
 /**
   * Created by bsharp on 2/19/16.
   */
-class ClassifyByCorrectness {
 
-
-}
 
 object ClassifyByCorrectness {
 
@@ -20,12 +17,14 @@ object ClassifyByCorrectness {
     val props = StringUtils.argsToProperties(args)
 
     // 1. Load in Questions (Dev)
-    val questionsFile = "/data/nlp/corpora/AriResources/Kaggle/training_set.506dv.tsv"
+    //val questionsFile = "/data/nlp/corpora/AriResources/Kaggle/training_set.506dv.tsv"
+    val questionsFile = "/data/nlp/corpora/AriResources/Kaggle/training_set.qtype.1000dv.tsv"
     val questions = new InputReader(new File(questionsFile)).questions
 
     // 2. Load in the results of the ranker (on the same questions)
     val qidLexicon = Voter.buildQIDLexicon(questions)
-    val rankerFile = "/home/bsharp/kaggle/rankers/ir_en_wiki.out"
+    //val rankerFile = "/home/bsharp/kaggle/rankers/ir_en_wiki.out"
+    val rankerFile = "/home/bsharp/kaggle/rankers/qType/ir_en_wiki.tr1500-dv1000.out"
     val ranker = new Ranker(Voter.parseTSV(rankerFile, qidLexicon), "ranker")
 
     // 3. Score the questions and label accordingly
@@ -40,7 +39,7 @@ object ClassifyByCorrectness {
     }
 
     // 4. Store the classified questions
-    val outputFile = "/home/bsharp/kaggle/qtype/questions_506_byIREngWiki_feb19.txt"
+    val outputFile = "/home/bsharp/kaggle/qtype/questions_1000_byIREngWiki_mar5.txt"
     val pw = new PrintWriter(outputFile)
     for (qid <- questions.indices) {
       pw.println(labels(qid) + "\t" + questions(qid).toString())
