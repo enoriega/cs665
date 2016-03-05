@@ -35,12 +35,26 @@ class FeatureExtractor (config:Config) {
       d <- docs
       s <- d.sentences
       i <- s.words.indices
-      w = s.words(i)
-      l = s.lemmas.get(i)
+      w = s.words(i).toLowerCase
+      l = s.lemmas.get(i).toLowerCase()
       if !FeatureExtractor.STOP_WORD_LEMMAS.contains(l)
       t = s.tags.get(i)
       if !filterPOS || isContentTag(t)
-    } counter.setCount("LEMMA_" + l, 1.0)
+    } counter.incrementCount("LEMMA_" + l, 1.0)
+  }
+
+  // Look for lemmas that are specifiec in a set of key words, add if found
+  def addKeyWordFeatures(docs:Seq[Document], counter:Counter[String]): Unit = {
+    for {
+      d <- docs
+      s <- d.sentences
+      i <- s.words.indices
+      w = s.words(i).toLowerCase
+      l = s.lemmas.get(i).toLowerCase()
+      if !FeatureExtractor.STOP_WORD_LEMMAS.contains(l)
+      t = s.tags.get(i)
+      if FeatureExtractor.KEY_LEMMAS.contains(l)
+    } counter.incrementCount("KEYWORD_" + l, 1.0)
   }
 
   def isContentTag(t:String):Boolean = {
@@ -59,5 +73,8 @@ object FeatureExtractor {
   def CONTENT_TAGS = Array("NN", "VB", "RB", "JJ", "IN")
 
   def STOP_WORD_LEMMAS = Array("be", "have", "do")
+
+  def KEY_LEMMAS = Array("example", "not", "none", "all", "some", "never", "increase", "decrease", "cause", "because",
+  "result", "lead", "process", "however", "cycle", "without", "more", "less", "rate", "__________")
 
 }

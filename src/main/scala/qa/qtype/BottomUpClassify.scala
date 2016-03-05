@@ -6,6 +6,7 @@ import java.util.Properties
 import com.typesafe.config.ConfigFactory
 import edu.arizona.sista.learning.RVFDataset._
 import edu.arizona.sista.learning._
+import edu.arizona.sista.processors.Document
 import edu.arizona.sista.processors.fastnlp.FastNLPProcessor
 import edu.arizona.sista.struct.Counter
 import edu.arizona.sista.utils.StringUtils
@@ -51,13 +52,18 @@ object BottomUpClassify extends App {
   def mkRVFDataset(questions:Seq[Question]):RVFDataset[Int, String] = {
     val dataset = new RVFDataset[Int, String]()
 
+    // Annotate the questions
+    annotateQuestions(questions)
+
     // For each question, make a datum and add it to the dataset
     for (q <- questions) dataset += mkDatumFromQuestion(q)
+
+    val informativeness = Datasets.featureSelectionByInformativeness(dataset, LogisticRegressionClassifier[Int, String], )
 
     // Gather what's needed to filter ngram features by PMI
     val nonLemmaFeatures = getNonLemmaFeatureNames(dataset)
     val labelProbs = getLabelProbs(dataset)
-    val lemmasToKeep = filterLemmasByPMI(questions, dataset.labelLexicon.size, keepPercentage = 0.1, labelProbs)
+    val lemmasToKeep = filterLemmasByPMI(questions, dataset.labelLexicon.size, keepPercentage = 0.05, labelProbs)
     val featuresToKeep = lemmasToKeep ++ nonLemmaFeatures
     val filteredDataset = filterDatasetByPMI(dataset, featuresToKeep)
 
@@ -65,32 +71,63 @@ object BottomUpClassify extends App {
     filteredDataset
   }
 
+  def annotateQuestions(questions:Seq[Question]): Seq[Question] = {
+    for (q <- questions){
+      q.annotation = Some(mkPartialAnnotation(q.question))
+      for (a <- q.choices) a.annotation = Some(mkPartialAnnotation(a.text))
+    }
+    questions
+  }
+
+  def mkPartialAnnotation(text:String): Document = {
+    val doc = processor.mkDocument(text)
+    processor.tagPartsOfSpeech(doc)
+    processor.lemmatize(doc)
+    processor.recognizeNamedEntities(doc)
+    processor.parse(doc)
+    doc.clear()
+    doc
+  }
+
   // Given a Question, extract the features and return a Datum
-  def mkDatumFromQuestion(q:Question):RVFDatum[Int, String] = {
+  def mkDatumFromQuestion(q:Question,
+                          scaleRange: Option[ScaleRange[String]] = None,
+                          lower:Double = 0.0,
+                          upper:Double = 1.0):RVFDatum[Int, String] = {
     // Get label
     val label = q.rightChoice.getOrElse(-1)
     assert (label != -1)
     // Extract Features
     val questionFeatures = mkFeatures(q)
 
-    new RVFDatum[Int, String](label, questionFeatures)
+    val datum = new RVFDatum[Int, String](label, questionFeatures)
+
+    // Rescale if doing so
+    if (scaleRange.isDefined) {
+      val scaledFeatures = Datasets.svmScaleDatum(datum.featuresCounter, scaleRange.get, lower, upper)
+      return new RVFDatum[Int, String](label, scaledFeatures)
+    }
+
+    datum
   }
 
   // Extract a set of features from the question
   def mkFeatures(q:Question):Counter[String] = {
-    val qDoc = processor.annotate(q.question)
-    val aDocs = q.choices.map(a => processor.annotate(a.text))
+    val qDoc = q.annotation.get
+    val aDocs = q.choices.map(a => a.annotation.get)
     val fc = new Counter[String]
 
     // todo Turn on/Off Features?
 
-    // TODO Make Features!
     // Length Features:
     fc.setCount("numSentsInQuestion", featureExtractor.numSentsInQuestion(qDoc))
     fc.setCount("avgWordsInEachAnswer", featureExtractor.avgWordsInAns(aDocs))
 
-    // TODO Bigram features?
-    featureExtractor.addUnigramsFeatures(Seq(qDoc) ++ aDocs, fc, filterPOS = true)
+    // Ngram Features:
+    //featureExtractor.addUnigramsFeatures(Seq(qDoc) ++ aDocs, fc, filterPOS = true)
+
+    // Key Word Features:
+    //featureExtractor.addKeyWordFeatures(Seq(qDoc) ++ aDocs, fc)
 
     fc
   }
@@ -212,8 +249,8 @@ object BottomUpClassify extends App {
 
     for (q <- questions) {
       val label = q.rightChoice.get
-      val qDoc = processor.annotate(q.question)
-      val aDocs = q.choices.map(a => processor.annotate(a.text))
+      val qDoc = q.annotation.get
+      val aDocs = q.choices.map(a => a.annotation.get)
       for {
         doc <- Array(qDoc) ++ aDocs
         s <- doc.sentences
@@ -266,6 +303,7 @@ object BottomUpClassify extends App {
     total
   }
 
+
   // Determine how many of the predictions were correct
   def evaluate[L,F](datums:Seq[RVFDatum[L,F]], predictedLabels:Seq[L]): Double = {
     var precisionAt1:Double = 0.0
@@ -289,20 +327,25 @@ object BottomUpClassify extends App {
   val (trainQuestions, devQuestions, testQuestions) = generateFoldsFromFile(config.getString("buc.questions"))
   val trainDataset = mkRVFDataset(trainQuestions)
 
+  // 2. Scale the features
+  val rescale = config.getBoolean("buc.rescale")
+  val scaleRange = if (rescale) Some(Datasets.svmScaleRVFDataset(trainDataset, lower = 0.0, upper = 1.0)) else None
+
   // 3. Train
   val classifier = new LogisticRegressionClassifier[Int, String](bias = true)
 //  val classifier = new LinearSVMClassifier[Int, String]()
 //  val props = new Properties
 //  props.setProperty("epochs", "20")
-//  props.setProperty("burnInIterations", "5")
+//  props.setProperty("burnInIterations", "100")
 //  props.setProperty("marginRatio", "1.0")
 //  val classifier = new PerceptronClassifier[Int, String](props)
   classifier.train(trainDataset)
 
   // 4. Predict
   val useDev = config.getBoolean("buc.useDev")
-  if (useDev) println ("Testing on DEV") else ("Testing on **TEST**")
-  val testDatums = if (useDev) devQuestions.map(q => mkDatumFromQuestion(q)) else testQuestions.map(q => mkDatumFromQuestion(q))
+  if (useDev) println ("Testing on DEV") else println("Testing on **TEST**")
+  val annotatedQuestions = if (useDev) annotateQuestions(devQuestions) else annotateQuestions(testQuestions)
+  val testDatums = annotatedQuestions.map(q => mkDatumFromQuestion(q, scaleRange))
   val predictedLabels = testDatums.map(td => classifier.classOf(td))
 
   // 5. Evaluate
