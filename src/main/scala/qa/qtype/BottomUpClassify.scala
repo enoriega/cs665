@@ -29,6 +29,14 @@ object BottomUpClassify extends App {
 
   lazy val processor = new FastNLPProcessor()
   val featureExtractor = new FeatureExtractor(config)
+  val RESCALE_LOWER = config.getDouble("buc.rescale_lower")
+  val RESCALE_UPPER = config.getDouble("buc.rescale_upper")
+
+  val useLength:Boolean = true
+  val useNGram:Boolean = false
+  val useKeyWord:Boolean = true
+
+
 
   // Opens a file, reads the questions and divides them into train, dev, and test partitions
   def generateFoldsFromFile(fn:String):(Seq[Question], Seq[Question], Seq[Question]) = {
@@ -58,7 +66,7 @@ object BottomUpClassify extends App {
     // For each question, make a datum and add it to the dataset
     for (q <- questions) dataset += mkDatumFromQuestion(q)
 
-    val informativeness = Datasets.featureSelectionByInformativeness(dataset, LogisticRegressionClassifier[Int, String], )
+    //val informativeness = Datasets.sortFeaturesByInformativeness(dataset, 2)
 
     // Gather what's needed to filter ngram features by PMI
     val nonLemmaFeatures = getNonLemmaFeatureNames(dataset)
@@ -117,17 +125,21 @@ object BottomUpClassify extends App {
     val aDocs = q.choices.map(a => a.annotation.get)
     val fc = new Counter[String]
 
-    // todo Turn on/Off Features?
-
     // Length Features:
-    fc.setCount("numSentsInQuestion", featureExtractor.numSentsInQuestion(qDoc))
-    fc.setCount("avgWordsInEachAnswer", featureExtractor.avgWordsInAns(aDocs))
+    if (useLength) {
+      fc.setCount("numSentsInQuestion", featureExtractor.numSentsInQuestion(qDoc))
+      fc.setCount("avgWordsInEachAnswer", featureExtractor.avgWordsInAns(aDocs))
+    }
 
     // Ngram Features:
-    //featureExtractor.addUnigramsFeatures(Seq(qDoc) ++ aDocs, fc, filterPOS = true)
+    if (useNGram) {
+      featureExtractor.addUnigramsFeatures(Seq(qDoc) ++ aDocs, fc, filterPOS = true)
+    }
 
     // Key Word Features:
-    //featureExtractor.addKeyWordFeatures(Seq(qDoc) ++ aDocs, fc)
+     if (useKeyWord) {
+       featureExtractor.addKeyWordFeatures(Seq(qDoc) ++ aDocs, fc)
+     }
 
     fc
   }
@@ -328,8 +340,11 @@ object BottomUpClassify extends App {
   val trainDataset = mkRVFDataset(trainQuestions)
 
   // 2. Scale the features
+  println ("Before scaling: " + trainDataset.featuresCounter(0).toString)
   val rescale = config.getBoolean("buc.rescale")
-  val scaleRange = if (rescale) Some(Datasets.svmScaleRVFDataset(trainDataset, lower = 0.0, upper = 1.0)) else None
+  val scaleRange = if (rescale) Some(Datasets.svmScaleRVFDataset(trainDataset, RESCALE_LOWER, RESCALE_UPPER)) else None
+  println ("After scaling: " + trainDataset.featuresCounter(0).toString)
+//  sys.exit()
 
   // 3. Train
   val classifier = new LogisticRegressionClassifier[Int, String](bias = true)
@@ -345,7 +360,7 @@ object BottomUpClassify extends App {
   val useDev = config.getBoolean("buc.useDev")
   if (useDev) println ("Testing on DEV") else println("Testing on **TEST**")
   val annotatedQuestions = if (useDev) annotateQuestions(devQuestions) else annotateQuestions(testQuestions)
-  val testDatums = annotatedQuestions.map(q => mkDatumFromQuestion(q, scaleRange))
+  val testDatums = annotatedQuestions.map(q => mkDatumFromQuestion(q, scaleRange, RESCALE_LOWER, RESCALE_UPPER))
   val predictedLabels = testDatums.map(td => classifier.classOf(td))
 
   // 5. Evaluate
