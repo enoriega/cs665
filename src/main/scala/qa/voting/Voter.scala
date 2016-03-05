@@ -17,7 +17,7 @@ import qa.input._
 /**
   * Created by bsharp on 2/3/16.
   */
-class Voter {}
+
 
 object Voter extends App {
   //val processor = new FastNLPProcessor(withDiscourse = false)
@@ -224,13 +224,17 @@ object Voter extends App {
 
     var questionCounter:Int = 0
 
+    var qidIsKaggle: Boolean = true
+
     for (line <- lines) {
-      //println (line)
       val fields = line.split("\t")
       assert (fields.length == 3)
+
       var qid = fields(0).toInt
-      // If the tsv is in the Sia format - replace the qIndex with the qID
-      if (qid > 9000) qid = lexicon.add(qid)
+      // If the tsv is in the Sia format - take note
+      if (qid == 0) qidIsKaggle = false
+
+      if (qidIsKaggle) qid = lexicon.add(qid)
 
       val aidRaw = fields(1)
       val aid = if (answerChoices.contains(aidRaw)) answerChoices.indexOf(aidRaw) else aidRaw.toInt
@@ -257,12 +261,12 @@ object Voter extends App {
       val enabled = config.getBoolean(s"voter.rankers.$i.enabled")
       val rankerPrefix = config.getString(s"voter.rankers.$i.prefix")
       if (enabled) {
-        val rankerTSVFile = config.getString(s"voter.ranker.$i.tsv")
+        val rankerTSVFile = config.getString(s"voter.rankers.$i.tsv")
         val rankerScores = parseTSV(rankerTSVFile, lexicon)
         val currRanker = new Ranker(rankerScores, rankerPrefix)
 
         // Find the voting scale for the ranker
-        val rankerDevTSVFile = config.getString(s"voter.ranker.$i.tsv_dev")
+        val rankerDevTSVFile = config.getString(s"voter.rankers.$i.tsv_dev")
         val rankerDevScores = parseTSV(rankerDevTSVFile, lexicon)
         currRanker.votingScale = EnsembleUtils.rankPrecisions(questions, rankerDevScores)
 
@@ -293,30 +297,24 @@ object Voter extends App {
   val questions = new InputReader(new File(config.getString("voter.questions"))).questions
   // The dev questions should be the 506, and should align with the ranker.i.tsv.dev ranking file for determining the
   // voting scale
-
   // If you are running only over the 506, then these are just the regular questions
   val devQuestions = new InputReader(new File(config.getString("voter.questions_dev"))).questions
   val qIDLexicon = buildQIDLexicon(questions)
 
   // Loads up the rankers and also calculates the voting scale based on the 506 dev questions
   val rankers = loadRankers(config, qIDLexicon, devQuestions)
-
-  val method = config.getString("voter.method")
-
   // Display the rank precision for each ranker:
   for (r <- rankers) {
     println ("Rank precision for " + r.name + "... [" + r.votingScale.mkString(", ") + "]")
   }
 
-
+  // Vote
+  val method = config.getString("voter.method")
   val selections = castVotes(questions, rankers, method)
 
   // Save the selections in the correct format
   val submissionCSVFilename = new File(config.getString("voter.submissionFilename"))
   saveSubmissionCSV(selections, submissionCSVFilename.getCanonicalPath)
-  ///////////////////////////
-
-
 
 }
 
