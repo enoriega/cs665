@@ -22,7 +22,7 @@ class IRRanker(config:Config) extends Ranker{
   def rerank(questions:Seq[Question], index:IRIndex):Seq[Question] = {
     // Load the corresponding model depending on the index's name
     val modelFile = new File(config.getString(s"indexes.${index.name}.irModelFile"))
-    val normalizersFile = new File(config.getString(s"indexes.${index.name}.irModelFile"))
+    val normalizersFile = new File(config.getString(s"indexes.${index.name}.irNormalizersFile"))
     this.load(modelFile, Some(normalizersFile))
 
     val (lines:Seq[String], x:Seq[Double]) = questions2svmRankLines(questions, index, this.normalizers)
@@ -92,7 +92,7 @@ class IRRanker(config:Config) extends Ranker{
     normalizersFile match {
       case Some(f) =>
         val pw = new PrintWriter(f)
-        pw.write(normalizers.mkString("\t"))
+        pw.write(s"${normalizers.mkString("\t")}\n")
         pw.close
       case None => Unit
     }
@@ -167,8 +167,8 @@ class IRRanker(config:Config) extends Ranker{
 object TrainIRRanker extends App {
 
   val config =
-      if (args.size < 3) ConfigFactory.load()
-      else ConfigFactory.parseFile(new File(args(2))).resolve()
+      if (args.size < 4) ConfigFactory.load()
+      else ConfigFactory.parseFile(new File(args(3))).resolve()
 
   val indexName = args(0)
   val outFile = new File(args(1))
