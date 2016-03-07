@@ -74,7 +74,19 @@ object FeatureExtractor {
 
   def STOP_WORD_LEMMAS = Array("be", "have", "do")
 
-  def KEY_LEMMAS = Array("example", "not", "none", "all", "some", "never", "increase", "decrease", "cause", "because",
-  "result", "lead", "process", "however", "cycle", "without", "more", "less", "rate", "__________")
+  //def KEY_LEMMAS = Array(KEY_LEMMAS_INFTYPE, KEY_LEMMAS_QUANTIFIER, KEY_LEMMAS_OTHER).flatten
+//  def KEY_LEMMAS = Array(KEY_LEMMAS_INFTYPE, KEY_LEMMAS_OTHER).flatten
+  //def KEY_LEMMAS = Array(KEY_LEMMAS_INFTYPE).flatten
+  //def KEY_LEMMAS = Array(KEY_LEMMAS_QUANTIFIER).flatten
+  def KEY_LEMMAS = Array(KEY_LEMMAS_OTHER).flatten
+
+
+  def KEY_LEMMAS_INFTYPE = Array("example", "cause", "because", "result", "lead", "process")
+
+  def KEY_LEMMAS_QUANTIFIER = Array("not", "none", "all", "some", "never", "increase", "decrease",
+    "more", "less", "rate")
+
+  def KEY_LEMMAS_OTHER = Array("cycle", "__________", "example")
+
 
 }

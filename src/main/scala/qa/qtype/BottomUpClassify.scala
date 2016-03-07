@@ -6,6 +6,7 @@ import java.util.Properties
 import com.typesafe.config.ConfigFactory
 import edu.arizona.sista.learning.RVFDataset._
 import edu.arizona.sista.learning._
+import edu.arizona.sista.learning.Dataset
 import edu.arizona.sista.processors.Document
 import edu.arizona.sista.processors.fastnlp.FastNLPProcessor
 import edu.arizona.sista.struct.Counter
@@ -32,8 +33,8 @@ object BottomUpClassify extends App {
   val RESCALE_LOWER = config.getDouble("buc.rescale_lower")
   val RESCALE_UPPER = config.getDouble("buc.rescale_upper")
 
-  val useLength:Boolean = true
-  val useNGram:Boolean = false
+  val useLength:Boolean = false
+  val useNGram:Boolean = true
   val useKeyWord:Boolean = true
 
 
@@ -57,7 +58,7 @@ object BottomUpClassify extends App {
   }
 
   // Make a Dataset for training out of the training questions
-  def mkRVFDataset(questions:Seq[Question]):RVFDataset[Int, String] = {
+  def mkRVFDataset(questions:Seq[Question]):Dataset[Int, String] = {
     val dataset = new RVFDataset[Int, String]()
 
     // Annotate the questions
@@ -69,14 +70,15 @@ object BottomUpClassify extends App {
     //val informativeness = Datasets.sortFeaturesByInformativeness(dataset, 2)
 
     // Gather what's needed to filter ngram features by PMI
-    val nonLemmaFeatures = getNonLemmaFeatureNames(dataset)
-    val labelProbs = getLabelProbs(dataset)
-    val lemmasToKeep = filterLemmasByPMI(questions, dataset.labelLexicon.size, keepPercentage = 0.05, labelProbs)
-    val featuresToKeep = lemmasToKeep ++ nonLemmaFeatures
-    val filteredDataset = filterDatasetByPMI(dataset, featuresToKeep)
-
-    println(s"A total of ${filteredDataset.featureLexicon.size} features were extracted (and in use in the dataset).")
-    filteredDataset
+//    val nonLemmaFeatures = getNonLemmaFeatureNames(dataset)
+//    val labelProbs = getLabelProbs(dataset)
+//    val lemmasToKeep = filterLemmasByPMI(questions, dataset.labelLexicon.size, keepPercentage = 0.05, labelProbs)
+//    val featuresToKeep = lemmasToKeep ++ nonLemmaFeatures
+//    val filteredDataset = filterDatasetByPMI(dataset, featuresToKeep)
+//
+//    println(s"A total of ${filteredDataset.featureLexicon.size} features were extracted (and in use in the dataset).")
+//    filteredDataset
+    dataset
   }
 
   def annotateQuestions(questions:Seq[Question]): Seq[Question] = {
@@ -204,7 +206,7 @@ object BottomUpClassify extends App {
 
   def filterDatasetByPMI(dataset:RVFDataset[Int, String], featuresToKeep:Set[String]): RVFDataset[Int, String] = {
 
-    val counts = dataset.countFeatures(dataset.features)
+    val counts = dataset.countFeatures(dataset.features, threshold = 2)
     println("Total unique features before filtering: " + counts.size)
 
     val featuresToKeepByIndex = featuresToKeep.map(f => dataset.featureLexicon.get(f).getOrElse(-1))
@@ -230,7 +232,7 @@ object BottomUpClassify extends App {
       newFeatures += filteredFeats
       newValues += filteredVals
     }
-    logger.debug("Total features after filtering: " + dataset.countFeatures(newFeatures).size)
+    logger.debug("Total features after filtering: " + dataset.countFeatures(newFeatures, threshold = 2).size)
 
     new RVFDataset[Int, String](dataset.labelLexicon, dataset.featureLexicon.mapIndicesTo(featureIndexMap.toMap), dataset.labels, newFeatures, newValues)
   }
@@ -337,17 +339,18 @@ object BottomUpClassify extends App {
 
   // 1. Load the training dataset
   val (trainQuestions, devQuestions, testQuestions) = generateFoldsFromFile(config.getString("buc.questions"))
-  val trainDataset = mkRVFDataset(trainQuestions)
+  var trainDataset = mkRVFDataset(trainQuestions)
+  trainDataset = trainDataset.removeFeaturesByInformationGain(0.1)
 
   // 2. Scale the features
   println ("Before scaling: " + trainDataset.featuresCounter(0).toString)
   val rescale = config.getBoolean("buc.rescale")
-  val scaleRange = if (rescale) Some(Datasets.svmScaleRVFDataset(trainDataset, RESCALE_LOWER, RESCALE_UPPER)) else None
+  val scaleRange = if (rescale) Some(Datasets.svmScaleDataset(trainDataset, RESCALE_LOWER, RESCALE_UPPER)) else None
   println ("After scaling: " + trainDataset.featuresCounter(0).toString)
 //  sys.exit()
 
   // 3. Train
-  val classifier = new LogisticRegressionClassifier[Int, String](bias = true)
+  val classifier = new LogisticRegressionClassifier[Int, String](bias = false)
 //  val classifier = new LinearSVMClassifier[Int, String]()
 //  val props = new Properties
 //  props.setProperty("epochs", "20")
