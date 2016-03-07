@@ -11,5 +11,6 @@ libraryDependencies ++= Seq(
   "commons-io" % "commons-io" % "2.4",
   "org.apache.lucene" % "lucene-core" % "5.3.1",
   "org.apache.lucene" % "lucene-analyzers-common" % "5.3.1",
-  "org.apache.lucene" % "lucene-queryparser" % "5.3.1"
+  "org.apache.lucene" % "lucene-queryparser" % "5.3.1",
+  libraryDependencies += "com.assembla.scala-incubator" %% "graph-core" % "1.10.1"
 )
