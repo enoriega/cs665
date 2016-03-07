@@ -40,6 +40,16 @@ class WikipediaIndex(name:String, config:Config) extends IRIndex(name, config) {
   }
 
   def numDocs:Int = indexReader.numDocs()
+  def allDocs:Stream[String] = {
+    def helper(current:Int, bound:Int):Stream[String] = {
+      if(current == bound-1)
+        Stream.empty
+      else
+        Stream.cons(indexReader.document(current).get("content"), helper(current+1, bound))
+    }
+
+    helper(0, this.numDocs)
+  }
 }
 
 // Index the wikipedia with Lucene
