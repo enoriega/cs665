@@ -13,6 +13,7 @@ case class QueryResult(numResults:Int, docsInIndex:Int, maxScore:Double, topDocs
 // API to query an index
 abstract class IRIndex(val name:String, config:Config){
     def query(question:String, choice:String):QueryResult
+    def allDocs:Stream[String]
     def numDocs:Int
 }
 

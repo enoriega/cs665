@@ -37,8 +37,6 @@
     <orderEntry type="library" name="SBT: jline:jline:2.12.1:jar" level="project" />
     <orderEntry type="library" name="SBT: joda-time:joda-time:2.1:jar" level="project" />
     <orderEntry type="library" name="SBT: log4j:log4j:1.2.17:jar" level="project" />
-    <orderEntry type="library" name="SBT: org.clulab:processors_2.11:5.8.0:jar" level="project" />
-    <orderEntry type="library" name="SBT: org.clulab:processors_2.11:5.8.0:models:jar" level="project" />
     <orderEntry type="library" name="SBT: org.json4s:json4s-ast_2.11:3.2.11:jar" level="project" />
     <orderEntry type="library" name="SBT: org.json4s:json4s-core_2.11:3.2.11:jar" level="project" />
     <orderEntry type="library" name="SBT: org.json4s:json4s-native_2.11:3.2.11:jar" level="project" />
@@ -60,5 +58,8 @@
     <orderEntry type="library" name="SBT: org.apache.lucene:lucene-queries:5.3.1:jar" level="project" />
     <orderEntry type="library" name="SBT: org.apache.lucene:lucene-queryparser:5.3.1:jar" level="project" />
     <orderEntry type="library" name="SBT: org.apache.lucene:lucene-sandbox:5.3.1:jar" level="project" />
+    <orderEntry type="library" name="SBT: org.clulab:bioresources:1.1.1:jar" level="project" />
+    <orderEntry type="library" name="SBT: org.clulab:processors_2.11:5.8.2-SNAPSHOT:jar" level="project" />
+    <orderEntry type="library" name="SBT: org.clulab:processors_2.11:5.8.2-SNAPSHOT:models:jar" level="project" />
   </component>
 </module>
