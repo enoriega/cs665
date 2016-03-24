@@ -1,20 +1,15 @@
 package qa.paths
 
+import scalax.collection.mutable.Graph
+import scalax.collection.GraphPredef._
+import scalax.collection.edge.WkLkDiEdge
+import scalax.collection.edge.Implicits._
 import scala.collection.mutable._
 import qa.input._
 import com.typesafe.config.{ConfigFactory, Config}
 import java.io.File
 import edu.arizona.sista.processors.fastnlp.FastNLPProcessor
 import edu.arizona.sista.processors.Sentence
-
-class Path {
-  val nodes = Stack[Node]()
-
-  override def toString = nodes.reverse.mkString(" -> ")
-
-  def push(node: Node) = { nodes.push(node); this }
-  def pop() = nodes.pop()
-}
 
 object Paths extends App {
 
@@ -37,6 +32,13 @@ object Paths extends App {
       })
   }
 
+  def wordsToSets(words: Seq[String], G: Graph[Node, WkLkDiEdge]) = {
+    words.foldLeft(Set[Set[G.NodeT]]())(
+      (nodeSet, word) => nodeSet + GraphUtils.getNodes(G, word, "NN"))
+      .foldLeft(Set[G.NodeT]())(
+        (nodes, node) => nodes ++ node)
+  }
+
 
   val proc = new FastNLPProcessor()
   var doc = proc.annotate(qs.head.question)
@@ -50,17 +52,19 @@ object Paths extends App {
 
   /*println(G.nodes.foreach(n => println(n.label + " : " + 
     n.synset.getWordForms.mkString(", "))))
-  G.edges.foreach(e => println(e._1.synset.getWordForms.mkString(", ") 
-    + " --> " + e.label + " --> " +  e._2.synset.getWordForms.mkString(", ")))*/
+    G.edges.foreach(e => println(e._1.synset.getWordForms.mkString(", ") 
+    + " --> " + e.label + " --> " +  e._2.synset.getWordForms.mkString(", ")))
+    */
 
-  val qNodeList = qWords.foldLeft(Array[Queue[G.NodeT]]())(
-    (nodes, word) => nodes :+ GraphUtils.getNodes(G, word, "NN"))
-  val nodeSet0 = qNodeList(0)
-  val node = nodeSet0(0)
-  val finalNode = GraphUtils.getNodes(G, "entity", "NN")(0)
+  /*val qWords = Array("chef", "kitchen", "fireplace")
+  val G = GraphUtils.mkGraph(qWords)*/
 
-  val paths = GraphUtils.allPaths(G, Queue[Path](), new Path, 
-    Set[Node](), node, finalNode)
-  
-  println(paths.size)
+  val qWordSet = wordsToSets(qWords, G)
+  val aWordSet = wordsToSets(aWords, G)
+
+  val allPaths = ArrayBuffer[Queue[Path]]()
+
+  qWordSet.foreach(q => {
+    aWordSet.foreach(a => allPaths += GraphUtils.genAllPaths(G, q, a))
+    })
 }

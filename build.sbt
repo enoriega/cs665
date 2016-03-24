@@ -4,7 +4,7 @@ version := "1.0"
 
 scalaVersion := "2.11.7"
 
-javaOptions ++= Seq("-Xms256M", "-Xmx2G", "-XX:MaxPermSize=1024M")
+javaOptions ++= Seq("-Xmx8G", "-Xms6G")
 
 libraryDependencies ++= Seq(
   //"org.clulab" %% "processors" % "5.8.0",

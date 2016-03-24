@@ -7,20 +7,9 @@ import scalax.collection.edge.Implicits._
 import scala.collection.mutable._
 import com.typesafe.config.{ConfigFactory, Config}
 import java.io.File
+import java.util.NoSuchElementException
 import edu.smu.tspell.wordnet._
 import qa.input._
-
-
-case class Node(synset: Synset, label: String) {
-  var color = Node.WHITE
-  override def toString = s"$label: {${synset.getWordForms.mkString(", ")}}"
-}
-
-object Node {
-  val WHITE = 0
-  val GRAY = 1
-  val BLACK = 2
-}
 
 object GraphUtils {
   val config = ConfigFactory.load()
@@ -30,19 +19,27 @@ object GraphUtils {
 
   val db = WordNetDatabase.getFileInstance
 
-  def getNode(G: Graph[Node, WkLkDiEdge], s: Node): G.NodeT = G.get(s)
+  def getNode(G: Graph[Node, WkLkDiEdge], s: Node): Option[G.NodeT] = {
+    try {
+      Some(G get s)
+    } catch {
+      case e: NoSuchElementException => None
+    }
+  }
 
   def getNodes(G: Graph[Node, WkLkDiEdge], word: String, 
-    tag: String): Queue[G.NodeT] = {
+    tag: String): Set[G.NodeT] = {
     val pos = tag match {
       case "NN" => SynsetType.NOUN
     }
 
-    val nodes = db.getSynsets(word, pos).foldLeft(Queue[G.NodeT]())(
+    val nodes = db.getSynsets(word, pos).foldLeft(Set[G.NodeT]())(
       (nodes, synset) => {
         val node = getNode(G, Node(synset, tag))
-        if(node != null) nodes :+ node
-        else nodes
+        node match {
+          case Some(node) => nodes + node
+          case None => nodes
+        }
       })
 
     nodes
@@ -99,9 +96,11 @@ object GraphUtils {
     set.foreach(s => {
         val v = Node(s, tag)
         G += ((Node(u.synset, tag) ~%#+#> v)(0, link))
+        if(link equals "hypernym")
+          G += ((v ~%#+#> (Node(u.synset, tag)))(0, "hyponym"))
         if(v.color == Node.WHITE) {
           v.color = Node.GRAY
-          Q.enqueue(getNode(G, v))
+          Q.enqueue(getNode(G, v).get)
         }
         //println(s"Graph size : ${G.order}, ${G.graphSize}")
     })
@@ -112,7 +111,7 @@ object GraphUtils {
     tag: String) = {
     
     val Q = Queue[G.NodeT]()
-    val sNode = getNode(G, s)
+    val sNode = getNode(G, s).get
     sNode.color = Node.GRAY
     Q.enqueue(sNode)
     
@@ -127,26 +126,25 @@ object GraphUtils {
     }
   }  
 
-  def allPaths(G: Graph[Node, WkLkDiEdge], paths: Queue[Path], p: Path, 
-    visited: Set[Node], v: Node, t: Node): Queue[Path] = {
-    
-    p.push(v)
-    visited += v
+  def genAllPaths(G: Graph[Node, WkLkDiEdge], v: Node, t: Node) = {
+    val paths = Queue[Path]()
+    def genAllPathsHelper(G: Graph[Node, WkLkDiEdge], p: Path,
+      visited: Set[Node], v: Node, t: Node): Unit = {
+      
+      p.push(v)
+      visited += v
 
-    if(v == t) {
-      println(p.toString)
-      paths += p
+      if(v == t) paths += new Path().copy(p.nodes)
+      else {
+        getNode(G, v).get.outNeighbors.foreach(w => 
+          if(!visited.contains(w)) genAllPathsHelper(G, p, visited, w, t))
+      }
+
+      p.pop
+      visited -= v
     }
 
-    else {
-      getNode(G, v).outNeighbors.foreach(w => 
-        if(!visited.contains(w)) allPaths(G, paths, p, visited, w, t))
-    }
-
-    p.pop
-    visited -= v
-
+    genAllPathsHelper(G, new Path, Set[Node](), v, t)
     paths
   }
-
 }
