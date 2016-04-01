@@ -2,6 +2,8 @@ package qa.ie
 
 import java.io.File
 import io.Source
+import scala.util.Random
+import scala.util.{Try,Success,Failure}
 import edu.arizona.sista.processors.fastnlp.FastNLPProcessor
 import edu.arizona.sista.processors.{Document, Sentence}
 
@@ -19,7 +21,9 @@ object BookQuestionExtractor extends App{
     val marks = Set("?", ":", ";")
 
     // Parse the lines and annotate the docs
-    val lines = Source.fromFile(filePath).getLines.toList.filter{
+    val rawLines:Seq[String] = Source.fromFile(filePath).getLines.toSeq
+
+    val lines = rawLines.filter{
       line =>
         val last = line.takeRight(1)
         !marks.contains(last)
@@ -45,31 +49,47 @@ object BookQuestionExtractor extends App{
 
     val d = paragraphs.values.toList
 
-    val questions:Seq[ArtificialQA] = d.flatMap{
+    val questions:Map[(Document, Int), ArtificialQA] = d.flatMap{
       doc =>
       try{
         doc.sentences.zipWithIndex map {
           case (sen, ix) =>
-            makeQuestion(sen, ix, doc)
+            (doc, ix) -> makeQuestion(sen, ix, doc)
         }
       } catch{
         case _:Throwable => Seq()
       }
     }.filter{
-      case n:NoQA => false
-      case _ => true
+      case (ix, q) =>
+        q match {
+          case n:NoQA => false
+          case _ => true
+        }
+    }.toMap
+
+    // Add alternatives (incorrect answers for each artificial qa)
+    def range(i:Int, k:Int = 5) = (i-k to i-1).filter(_ >= 0) ++ (i+1 to i+k)
+    val questionsWithAlternatives:Iterable[ArtificialQA] = for(((d, i), qa) <- questions) yield {
+      val alternatives = Random.shuffle(range(i, 10).map{
+        j =>
+          questions.lift((d, j))
+      }.collect{case Some(a) => a}).take(3).map(_.answer).filter(_.toLowerCase != qa.answer.toLowerCase).toSeq
+      ArtificialQA(qa.qtype, qa.question, qa.answer, alternatives)
     }
 
-    for(question <- questions){
-      println(s"${question.question}\t${question.answer}")
+    for(question <- questionsWithAlternatives){
+      println(s"${question.question}\t${question.answer}\t" + question.alternatives.mkString("\t"))
     }
 
     def makeQuestion(sen:Sentence, index:Int, context:Document):ArtificialQA = {
+
+      val stopLemmas = Set("figure", "table", "example", "chapter")
 
       sen.stanfordBasicDependencies match {
         case Some(deps) =>
           val root:Int = deps.roots.head // I assume there's a single root
           val tags:Seq[String] = sen.tags match { case Some(t) => t; case None => Seq()}
+          val lemmas:Seq[String] = sen.lemmas match { case Some(t) => t; case None => Seq()}
           // If the root is a verb, go ahead
           if (tags(root).startsWith("VB")){
 
@@ -87,9 +107,18 @@ object BookQuestionExtractor extends App{
                 val answerNums = expand(subj(0)._1, allEdges)
 
                 val answerTags = answerNums.map(tags).toSet
+                val filteredAnswerTags = answerNums.filter{
+                  i =>
+                    !stopLemmas.contains(lemmas(i).toLowerCase)
+                }.map(tags)
 
+                // Ignore those that only contain a preposition or a determiner
                 val filtered = Set("PRP", "DT")
                 if(answerTags.size == 1 && filtered.contains(answerTags.head)){
+                  new NoQA
+                }
+                // Filter out those that have answer stop words
+                else if(!filteredAnswerTags.map(_(0)).toSet.contains('N')){
                   new NoQA
                 }
                 else{
@@ -97,11 +126,9 @@ object BookQuestionExtractor extends App{
                   val answerNumsSet = answerNums.toSet
                   val questionNums = (0 to words.size - 1).filter(!answerNumsSet.contains(_))
 
-                  val f = questionNums.map(tags).toSet.map{
-                    t:String => t.startsWith("V") || t.startsWith("N")
-                  }.fold(false)(_||_)
+                  val f = questionNums.map(tags(_)(0)).toSet
 
-                  if(f){
+                  if(f.contains('N') && f.contains('V')){
 
                     val answer = answerNums.sorted.map(words).mkString(" ")
 
@@ -117,15 +144,14 @@ object BookQuestionExtractor extends App{
                     // TODO: Add justification
                     val justification = ""//justify(sen, index, context)
 
-                    if(!question.contains(" Figure "))
-                      ArtificialQA(qType, question, answer, justification)
-                    else
-                      new NoQA
+
+                    ArtificialQA(qType, question, answer)
+
 
                   }
-                else{
-                  new NoQA
-                }
+                  else{
+                    new NoQA
+                  }
 
                 }
 
