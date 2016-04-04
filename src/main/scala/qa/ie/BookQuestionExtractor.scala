@@ -69,12 +69,45 @@ object BookQuestionExtractor extends App{
 
     // Add alternatives (incorrect answers for each artificial qa)
     def range(i:Int, k:Int = 5) = (i-k to i-1).filter(_ >= 0) ++ (i+1 to i+k)
-    val questionsWithAlternatives:Iterable[ArtificialQA] = for(((d, i), qa) <- questions) yield {
-      val alternatives = Random.shuffle(range(i, 10).map{
+    def questionFilter(qa:ArtificialQA)(aq:ArtificialQA) = {
+      val qNouns = qa.questionNouns.toSet
+      val aNouns = qa.answerNouns.toSet
+
+      if(aq.answer.toLowerCase != qa.answer.toLowerCase){
+        val nouns = aq.answerNouns.toSet
+        if(nouns.diff(aNouns).size >= 1){
+          if(nouns.diff(qNouns).size >= 1)
+            true
+          else
+            false
+        }
+        else
+          false
+        // true
+      }
+      else
+        false
+    }
+
+    def harvestAlternatives(d:Document, i:Int, qa:ArtificialQA, k:Int = 10) = {
+      val alternatives = Random.shuffle(range(i, k).map{
         j =>
           questions.lift((d, j))
-      }.collect{case Some(a) => a}).take(3).map(_.answer).filter(_.toLowerCase != qa.answer.toLowerCase).toSeq
-      ArtificialQA(qa.qtype, qa.question, qa.answer, alternatives)
+      }.collect{case Some(a) => a})
+
+      // Filters on the alternatives
+      val filteredAlternatives = alternatives.filter(questionFilter(qa))
+      val aditionalAlternatives = Random.shuffle(questions.values).filter{
+        a => !filteredAlternatives.exists(_ == a) && qa != a
+      }.take(Seq(3-filteredAlternatives.size, 0).max)
+      (filteredAlternatives ++ aditionalAlternatives).toSet.take(3).toSeq
+    }
+
+    val questionsWithAlternatives:Iterable[ArtificialQA] = for(((d, i), qa) <- questions) yield {
+
+      val alternatives = harvestAlternatives(d, i, qa)
+
+      ArtificialQA(qa.qtype, qa.question, qa.answer, qa.questionNouns, qa.answerNouns, alternatives.map(_.answer))
     }
 
     for(question <- questionsWithAlternatives){
@@ -144,8 +177,7 @@ object BookQuestionExtractor extends App{
                     // TODO: Add justification
                     val justification = ""//justify(sen, index, context)
 
-
-                    ArtificialQA(qType, question, answer)
+                    ArtificialQA(qType, question, answer, questionNums.filter(tags(_).startsWith("N")).map(lemmas), answerNums.filter(tags(_).startsWith("N")).map(lemmas))
 
 
                   }

@@ -81,7 +81,7 @@ object QuestionExtractor extends App{
                 // TODO: Add justification
                 val justification = ""//justify(sen, index, context)
 
-                ArtificialQA(qType, question, answer, justification=justification)
+                ArtificialQA(qType, question, answer, Seq(), Seq(), justification=justification)
               }
               else
                 new NoQA
