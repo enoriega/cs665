@@ -3,10 +3,24 @@ package qa.paths
 import scala.collection.mutable._
 
 class Path {
-  val nodes = Stack[Node]()
-  override def toString = nodes.reverse.mkString(" -> ")
+  val elems = Stack[(Node, Option[(String, Double)])]()
 
-  def push(node: Node) = { nodes.push(node); this }
-  def pop() = { nodes.pop(); this }
-  def copy(those: Stack[Node]) = { those.reverse.foreach(n => push(n)); this }
+  override def toString = elems.reverse.map(_._1).mkString(" -> ")
+
+  def push(node: Node, edgeInfo: Option[(String, Double)]) = { 
+    elems.push((node, edgeInfo))
+    this 
+  }
+
+  def pop() = { 
+    elems.pop
+    this 
+  }
+
+  def copy(those: Stack[(Node, Option[(String, Double)])]) = { 
+    those.reverse.foreach(n => push(n._1, n._2))
+    this 
+  }
+  
+  def top() = if(!elems.isEmpty) Some(elems.top._1) else None
 }
