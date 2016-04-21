@@ -2,7 +2,7 @@ name := "cs665"
 
 version := "1.0"
 
-scalaVersion := "2.11.7"
+scalaVersion := "2.11.8"
 
 javaOptions ++= Seq("-Xmx20G")
 
@@ -16,5 +16,8 @@ libraryDependencies ++= Seq(
   "org.apache.lucene" % "lucene-core" % "5.3.1",
   "org.apache.lucene" % "lucene-analyzers-common" % "5.3.1",
   "org.apache.lucene" % "lucene-queryparser" % "5.3.1",
-  "com.assembla.scala-incubator" %% "graph-core" % "1.10.1"
+  "com.assembla.scala-incubator" %% "graph-core" % "1.11.0",
+  "com.assembla.scala-incubator" %% "graph-json" % "1.11.0",
+  "net.liftweb" %% "lift-json" % "2.0",
+  "com.thoughtworks.paranamer" % "paranamer" % "2.8"
 )

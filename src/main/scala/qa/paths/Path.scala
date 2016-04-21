@@ -5,7 +5,13 @@ import scala.collection.mutable._
 class Path {
   val elems = Stack[(Node, Option[(String, Double)])]()
 
-  override def toString = elems.reverse.map(_._1).mkString(" -> ")
+  override def toString = {
+    elems.reverse.map(_._1)
+      .zip(elems.reverse.map(o => o._2 match {
+        case Some(o) => o._1
+        case None => ""
+      })).mkString(" -> ")
+  }
 
   def push(node: Node, edgeInfo: Option[(String, Double)]) = { 
     elems.push((node, edgeInfo))
@@ -23,4 +29,15 @@ class Path {
   }
   
   def top() = if(!elems.isEmpty) Some(elems.top._1) else None
+
+  def apply(index: Int) = try {
+    elems(index)
+    } catch {
+      case aioobe: ArrayIndexOutOfBoundsException => println("Index out of bounds")
+    }
+
+  def update(index: Int, _that: (Node, Option[(String, Double)])) = {
+    elems(index) = _that
+  }
+
 }

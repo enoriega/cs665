@@ -4,8 +4,9 @@ import scalax.collection.mutable.Graph
 import scalax.collection.GraphPredef._
 import scalax.collection.edge.WkLkDiEdge
 import scalax.collection.edge.Implicits._
-import scala.collection.mutable._
+import scala.collection.mutable.{Set, Queue, ArrayBuffer}
 import qa.input._
+import qa.util._
 import com.typesafe.config.{ConfigFactory, Config}
 import java.io.File
 
@@ -22,20 +23,17 @@ object Paths extends App {
         (nodes, node) => nodes ++ node)
   }
 
-  var doc = GraphUtils.annotate(qs.head.question)
-  val qWords = GraphUtils.wordSet(doc.sentences)
-  
-  doc = GraphUtils.annotate(qs.head.choices(0).text)
-  val aWords = GraphUtils.wordSet(doc.sentences)
+
+  val qWords = text2set(qs.head.question)
+  val aWords = text2set(qs.head.choices(0).text)
 
   val G = GraphUtils.mkGraph(qWords)
   G ++= GraphUtils.mkGraph(aWords)
 
-  /*println(G.nodes.foreach(n => println(n.label + " : " + 
+  println(G.nodes.foreach(n => println(n.label + " : " + 
     n.synset.getWordForms.mkString(", "))))
-    G.edges.foreach(e => println(e._1.synset.getWordForms.mkString(", ") 
-    + " --> " + e.label + " --> " +  e._2.synset.getWordForms.mkString(", ")))
-    */
+    G.edges.foreach(e => println(e._1
+    + " --> " + e.label + " --> " +  e._2))
 
   /*val qWords = Array("chef", "kitchen", "fireplace")
   val G = GraphUtils.mkGraph(qWords)*/
@@ -49,5 +47,6 @@ object Paths extends App {
     aWordSet.foreach(a => allPaths += GraphUtils.genAllPaths(G, q, a))
     })
 
-  println(allPaths.mkString("\n"))
+  //println(allPaths.map(_.filter(_.elems.length < 10)).mkString("\n"))
+  GraphUtils.saveTo(G, config.getString("graph.trainingFile"))
 }
