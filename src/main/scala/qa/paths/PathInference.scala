@@ -13,10 +13,14 @@ import java.io.File
 
 object PathInference {
   val config = ConfigFactory.load
-  val reader = new InputReader(new File(config.getString("trainingFile")))
-  val questions = reader.questions
+  val trainReader = new InputReader(new File(config.getString("trainingFile")))
+  val devReader = new InputReader(new File(config.getString("devFile")))
+  val trainQs = trainReader.questions
+  val devQs = devReader.questions
   def main(args: Array[String]) = {
     val pr = new PathRanker
-    pr.train(questions, null)
+    pr.train(trainQs, null)
+    val pr2 = new PathRanker
+    pr2.train(devQs, null)
   }
 }

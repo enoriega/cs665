@@ -18,6 +18,9 @@ libraryDependencies ++= Seq(
   "org.apache.lucene" % "lucene-queryparser" % "5.3.1",
   "com.assembla.scala-incubator" %% "graph-core" % "1.11.0",
   "com.assembla.scala-incubator" %% "graph-json" % "1.11.0",
+  "com.assembla.scala-incubator" %% "graph-dot" % "1.11.0",
   "net.liftweb" %% "lift-json" % "2.0",
-  "com.thoughtworks.paranamer" % "paranamer" % "2.8"
+  "com.thoughtworks.paranamer" % "paranamer" % "2.8",
+  "net.sf.extjwnl" % "extjwnl" % "1.9.1",
+  "net.sf.extjwnl" % "extjwnl-data-wn31" % "1.2"
 )

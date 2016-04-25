@@ -4,28 +4,30 @@ import scalax.collection.mutable.Graph
 import scalax.collection.GraphPredef._
 import scalax.collection.edge.WkLkDiEdge
 import scalax.collection.edge.Implicits._
+import scalax.collection.io.dot._
+import implicits._
 import scalax.collection.io.json._
 import scalax.collection.io.json.descriptor.predefined.WkLkDi
 import scala.collection.mutable._
+import scala.collection.JavaConverters._
 import com.typesafe.config.{ConfigFactory, Config}
 import java.io.{BufferedWriter, FileWriter, File, IOException}
 import java.util.NoSuchElementException
 import edu.arizona.sista.embeddings.word2vec.Word2Vec
 import edu.arizona.sista.processors.fastnlp.FastNLPProcessor
 import edu.arizona.sista.processors.Sentence
-import edu.smu.tspell.wordnet._
 import qa.input._
 import qa.util._
 import net.liftweb.json.{JsonAST, JsonParser, Printer}
+import net.sf.extjwnl.dictionary.Dictionary
+import net.sf.extjwnl.data.POS
+import net.sf.extjwnl.data.Word
+import net.sf.extjwnl.data.Synset
+import net.sf.extjwnl.data.PointerUtils
 
 object GraphUtils {
   val config = ConfigFactory.load()
-
-  System.setProperty(config.getString("wordnet.db_dir_prop"), 
-                     config.getString("wordnet.db_dir"))
-
-  val db = WordNetDatabase.getFileInstance
-  val w2v = new Word2Vec(config.getString("w2v.cwb"), None)
+  val dict = Dictionary.getDefaultResourceInstance
   val proc = new FastNLPProcessor()
 
   def getNode(G: Graph[Node, WkLkDiEdge], s: Node): Option[G.NodeT] = {
@@ -37,20 +39,21 @@ object GraphUtils {
   }
 
   def getNodes(word: String, tag: String) = {
-    val pos = tag match {
-      case "NN" => SynsetType.NOUN
+    val iw = dict.getIndexWord(pos(tag), word)
+    val nodes = iw match {
+      case null => Set[Node]()
+      case _ => iw.getSenses.asScala.toArray.map(Node(_, tag)).toSet
     }
-    val nodes = db.getSynsets(word, pos).map(Node(_, tag))
     nodes
   }
 
   def getNodes(G: Graph[Node, WkLkDiEdge], word: String, 
     tag: String): Set[G.NodeT] = {
-    val pos = tag match {
-      case "NN" => SynsetType.NOUN
-    }
 
-    val nodes = db.getSynsets(word, pos).foldLeft(Set[G.NodeT]())(
+    val iw = dict.getIndexWord(pos(tag), word)
+    val nodes = iw match {
+      case null => Set[G.NodeT]()
+      case _ => iw.getSenses.asScala.toArray.foldLeft(Set[G.NodeT]())(
       (nodes, synset) => {
         val node = getNode(G, Node(synset, tag))
         node match {
@@ -58,16 +61,16 @@ object GraphUtils {
           case None => nodes
         }
       })
+    }
 
     nodes
   }
 
-  private def nounToSynset(set: Array[NounSynset]) = set.map(_.asInstanceOf[Synset])
-
   def topKSynsets(ref: Seq[String], sets: Array[Synset], k: Int) = {
     sets.map(s => {
-      val defn = text2set(s.getDefinition)
-      (s, w2v.sanitizedTextSimilarity(ref.toList, defn.toList))
+      val tmp = Node(s, "")
+      val defn = text2set(tmp.defn)._1
+       (s, Utils._w2v.sanitizedTextSimilarity(ref.toList, defn.toList))
       }).sortWith(_._2 > _._2).slice(0, k).map(_._1)
   }
 
@@ -76,9 +79,8 @@ object GraphUtils {
    * key-weighted, key-labeled edges.
    */
 
-  def mkGraph(words: Seq[String]): Graph[Node, WkLkDiEdge] = {
+  def mkGraph(words: Seq[String], tags: Seq[String]): Graph[Node, WkLkDiEdge] = {
     
-    val tags = Array("NN", "VB", "JJ", "RB")
     val nounLinks = Array("hypernym", "hyponym", "instanceHypernym", 
       "instanceHyponym", "memberHolonym", "memberMeronym", "partHolonym",
       "partMeronym", "substanceHolonym", "substanceMeronym")
@@ -88,25 +90,21 @@ object GraphUtils {
     val G: Graph[Node, WkLkDiEdge] = Graph()
     
     // Add NounSynsets
-    words.foreach(word => {
-      val nounSynsets = db.getSynsets(word, SynsetType.NOUN)
-      val topKsets = topKSynsets(words, nounSynsets, 1)
-        .map(_.asInstanceOf[NounSynset])
-      topKsets.foreach(set => { 
-          val s = Node(set, "NN")
-          G += s
-          
-          populateGraph(G, s, "NN", words)
-      }) 
+    words.zip(tags).foreach(
+      { case (word, tag) => {
+          val iw = dict.getIndexWord(pos(tag), word)
+          val posSynsets = iw match {
+            case null => Array[Synset]()
+            case _ => iw.getSenses.asScala.toArray
+            } 
+          val topKsets = topKSynsets(words, posSynsets, 3)
+          topKsets.foreach(set => { 
+            val s = Node(set, tag)
+            G += s
+            populateGraph(G, s, tag, words)
+          })
+      } 
     })
-
-    // Add VerbSynsets
-
-
-    // Add AdjectiveSynsets
-
-
-    // Add AdverbSynsets
 
     G
   }
@@ -119,12 +117,21 @@ object GraphUtils {
     tag: String) = {
 
     set.foreach(s => {
-      val v = Node(s, tag)
+      val v = getNode(G, Node(s, tag)) match {
+        case Some(node) => val _node = Node(node.synset, node.label)
+          _node.color = node.color
+          _node
+        case None => Node(s, tag)
+      }
+      
       G += ((Node(u.synset, tag) ~%#+#> v)(0, link))
       if(link equals "hypernym")
         G += ((v ~%#+#> (Node(u.synset, tag)))(0, "hyponym"))
       else if(link equals "holonym")
         G += ((v ~%#+#> (Node(u.synset, tag)))(0, "meronym"))
+      else if(link equals "similar")
+        G += ((v ~%#+#> (Node(u.synset, tag)))(0, "similar"))
+
       if(v.color == Node.WHITE) {
         v.color = Node.GRAY
         Q.enqueue(getNode(G, v).get)
@@ -145,14 +152,25 @@ object GraphUtils {
     
     while(!Q.isEmpty) {
       val u = Q.dequeue()
+      val set = u.synset
       tag match {
         case "NN" =>
-          val nouns = u.synset.asInstanceOf[NounSynset]
-          val hypernyms = nounToSynset(nouns.getHypernyms)
-          val holonyms = nounToSynset(nouns.getPartHolonyms)
-          addEdges(G)(Q, u, topKSynsets(words, hypernyms, 1), "hypernym", tag)
-          addEdges(G)(Q, u, topKSynsets(words, holonyms, 1), "holonym", tag)
+          val hypernyms = PointerUtils.getDirectHypernyms(set).asScala.toArray.map(_.getSynset)
+          val holonyms = PointerUtils.getPartHolonyms(set).asScala.toArray.map(_.getSynset)
+          val similar = PointerUtils.getSynonyms(set).asScala.toArray.map(_.getSynset)
+          addEdges(G)(Q, u, topKSynsets(words, hypernyms, 3), "hypernym", tag)
+          addEdges(G)(Q, u, topKSynsets(words, holonyms, 3), "holonym", tag)
+          addEdges(G)(Q, u, topKSynsets(words, similar, 1), "similar", tag)
           u.color = Node.BLACK
+        case "VB" =>
+          val hypernyms = PointerUtils.getDirectHypernyms(set).asScala.toArray.map(_.getSynset)
+          val similar = PointerUtils.getSynonyms(set).asScala.toArray.map(_.getSynset)
+          addEdges(G)(Q, u, topKSynsets(words, hypernyms, 3), "hypernym", tag)
+          addEdges(G)(Q, u, topKSynsets(words, similar, 1), "similar", tag)
+          u.color = Node.BLACK
+        case "JJ" =>
+          val similar = PointerUtils.getSynonyms(set).asScala.toArray.map(_.getSynset)
+          addEdges(G)(Q, u, topKSynsets(words, similar, 1), "similar", tag)
       }
     }
   }  
@@ -190,21 +208,19 @@ object GraphUtils {
   object PositionedNodeDescriptor {
     import net.liftweb.json._
     final class NodeSerializer extends CustomSerializer[Node] ( fmts => (
-      { case JArray(JString(label) :: JString(wf) :: Nil) => {
-          getNodes(wf.split("_")(0), label)
-            .find(_.synset.getWordForms.mkString("_").equals(wf)).get
-          }
+      { case JArray(JString(label) :: JString(offset) :: Nil) => 
+          Node(dict.getSynsetAt(pos(label), offset.toLong), label)
         },
       {
         case Node(set, label) => JArray(JString(label) :: 
-          JString(set.getWordForms.mkString("_")) :: Nil)
+          JString(set.getOffset.toString) :: Nil)
         }
       ))
     val node = new NodeDescriptor[Node](
       typeId = "Nodes",
       customSerializers = Seq(new NodeSerializer)) {
       def id(node: Any) = node match {
-        case n@Node(s, l) => n.toString
+        case n@Node(s, l) => s.getOffset.toString
         }
       }
     }
@@ -236,5 +252,35 @@ object GraphUtils {
     val source = scala.io.Source.fromFile(jsonFile)
     val lines = try source.getLines mkString "\n" finally source.close()
     Graph.fromJson[Node, WkLkDiEdge](lines, descriptor)
+  }
+
+  def toDot(G: Graph[Node, WkLkDiEdge], dotFile: String, 
+    exec: Boolean = false) = {
+    import sys.process._
+    val root = DotRootGraph(directed = true, id = Some("WordNet_Graph"))
+
+    def edgeTransformer(ie: scalax.collection.Graph[Node, WkLkDiEdge]#EdgeT):
+      Option[(DotGraph, DotEdgeStmt)] = ie.edge match {
+      case WkLkDiEdge(src, target, weight, label) => label match {
+      case label: String =>
+        Some((root, DotEdgeStmt(src.toString, target.toString, 
+          List(DotAttr("label",label.toString)))))
+      }
+    }
+
+    val _G = G.asInstanceOf[scalax.collection.Graph[Node,WkLkDiEdge]]
+    val dot = _G.toDot(root, edgeTransformer)
+    val bw = new BufferedWriter(new FileWriter(dotFile))
+    try {
+      bw.write(dot)
+    } catch {
+      case ioe: IOException => println("Exception!")
+    }
+
+    bw.flush()
+    bw.close()
+
+    if(exec) s"dot -Tpng ${dotFile} -o graph.png".!
+    Unit
   }
 }
