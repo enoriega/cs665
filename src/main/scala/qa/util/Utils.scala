@@ -14,6 +14,13 @@ import net.sf.extjwnl.data.POS
 object Utils {
   val config = com.typesafe.config.ConfigFactory.load
   val _w2v = new Word2Vec(config.getString("w2v.cwb"), None)
+
+  def scale(value:Double, min:Double, max:Double, 
+    lower:Double, upper:Double):Double = {
+    if(min == max) return upper
+    // the result will be a value in [lower, upper]
+    lower + (upper - lower) * (value - min) / (max - min)
+  }
 }
 
 object w2v extends (String => Array[Double]) {
@@ -21,7 +28,6 @@ object w2v extends (String => Array[Double]) {
     case Some(vec) => Utils._w2v.norm(vec); vec
     case None => Array.ofDim[Double](Utils._w2v.dimensions)
     }
-  
 }
 
 object avgVector extends (Array[Array[Double]] => Array[Double]) {
@@ -32,6 +38,57 @@ object avgVector extends (Array[Array[Double]] => Array[Double]) {
 
 object sentence2set extends (Seq[Sentence] => (Array[String], Array[String])) {
   def apply(sentences: Seq[Sentence]) = {
+
+      /*
+       * Stop Words
+       */
+      val nonStopTags   = Array("NN", "VB", "JJ", "RB")
+      val stopGeneral   = Array("it", "its", "they", "best", "worst", 
+        "everything", "certain", "main" , "s")
+
+      // QA-specific stop words
+      val stopQA        = Array("example", "describe", "call", "show", "make",
+        "object", "one", "way", "method", "determine", "help")   // function
+      val stopQAStarts  = Array("who", "what", "where", "why", "when", 
+        "which", "how")
+
+      // Grounded-example stop words
+      val stopGrounded  = Array("person", "human")
+
+      // Type/form/kind
+      val stopTransparent = Array("kind", "type", "part", "form", "go", 
+        "act", "affect")
+
+      // Verbs
+      val stopVerbs     = Array("are", "be", "do", "get", "use", "is", "have")
+
+      // Numbers/quantifiers
+      val stopQuant     = Array("most", "many", "some", "likely", "usually", 
+        "often", "mostly", "small", "large")
+
+      // Other
+      val stopOther     = Array("come", "from", "back", "able", 
+        "something", "someone")
+
+      // Barron's inference stop words
+      val stopBarrons   = Array("other", "say", "also", "consider", "process",
+        "thing", "own", "place", "take", "term", "help")
+
+      // Combined list of stop words for QA focus word extraction
+      val stopWordsFocus = stopGeneral ++ stopQA ++ stopQAStarts ++ 
+        stopGrounded ++ stopTransparent ++ stopVerbs ++ stopQuant ++ 
+        stopOther ++ stopBarrons
+
+      /*
+       * Stop Phrases
+       */
+      val stopPhrases = new ArrayBuffer[Array[String]]()
+
+      stopPhrases.append( Array("in", "order", "to") )
+      stopPhrases.append( Array("does", "it", "take") )     // e.g. How long does it take ...
+      stopPhrases.append( Array("over", "time") )           // e.g. Over time, these decay into ...
+
+
     sentences.foldLeft((Array[String](), Array[String]()))(
       (wordSet, sentence) => {
         val tags = sentence.tags.get
@@ -46,14 +103,16 @@ object sentence2set extends (Seq[Sentence] => (Array[String], Array[String])) {
         val vbTags = Set("VB", "VBD", "VBG", "VBN", "VBP", "VBZ")
         val jjTags = Set("JJ", "JJR", "JJS")
 
-        for(i <- 0 until tags.length)
-          if(allTags.contains(tags(i))) {
-
-            if(nnTags.contains(tags(i))) {tag += "NN"; nv += words(i)}
-            else if(vbTags.contains(tags(i))) {tag += "VB"; nv += lemmas(i)}
-            else if(jjTags.contains(tags(i))) {tag += "JJ"; nv += words(i)}
+        for(i <- 0 until tags.length) {
+          if(!(stopWordsFocus.contains(lemmas(i)) ||
+             stopWordsFocus.contains(words(i)))) {
+            if(allTags.contains(tags(i))) {
+              if(nnTags.contains(tags(i))) {tag += "NN"; nv += words(i)}
+              else if(vbTags.contains(tags(i))) {tag += "VB"; nv += lemmas(i)}
+              else if(jjTags.contains(tags(i))) {tag += "JJ"; nv += words(i)}
+              }
+            }
           }
-
         (wordSet._1 ++ nv, wordSet._2 ++ tag)
         })
   }
@@ -90,6 +149,12 @@ object dotProduct extends ((Array[Double], Array[Double]) => Double) {
 
 object plus extends ((Array[Double], Array[Double]) => Array[Double]) {
   def apply(u: Array[Double], v: Array[Double]) = (u, v).zipped.map(_ + _)
+}
+
+object rescale extends ((Array[Double], Double, Double) => Array[Double]) {
+  def apply(x: Array[Double], lower: Double, upper: Double) = {
+    x.map(z => Utils.scale(z, x.min, x.max, lower, upper))
+  }
 }
 
 object pos extends (String => POS) {

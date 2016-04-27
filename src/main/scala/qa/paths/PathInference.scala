@@ -9,7 +9,7 @@ import qa.input._
 import qa.util._
 import qa.learning._
 import com.typesafe.config.{ConfigFactory, Config}
-import java.io.File
+import java.io._
 
 object PathInference {
   val config = ConfigFactory.load
@@ -18,9 +18,13 @@ object PathInference {
   val trainQs = trainReader.questions
   val devQs = devReader.questions
   def main(args: Array[String]) = {
-    val pr = new PathRanker
-    pr.train(trainQs, null)
-    val pr2 = new PathRanker
-    pr2.train(devQs, null)
+    val pr = new PathRanker(keepFiles = true)
+    pr.train(trainQs.slice(0,10), null)
+    val rq = pr.rerank(devQs.slice(0,10), null)
+
+    val bw = new BufferedWriter(new FileWriter(s"${config.getString("graph.opt")}"))
+    val choices = Array("A", "B", "C", "D")
+    rq.foreach(r => bw.write(s"${r.id}, ${choices(r.rightChoice.get)}\n"))
+    bw.close()
   }
 }

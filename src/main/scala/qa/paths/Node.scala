@@ -12,8 +12,8 @@ case class Node(synset: Synset, label: String) {
     .foldLeft(Array[String]())((words, word) => 
       words ++ word.split("\\s+")).map(w2v(_)))
   val gloss = synset.getGloss
-  val defn = if(gloss.indexOf(";") == -1) gloss 
-             else gloss.substring(0, gloss.indexOf(";"))
+  val defn = if(gloss.indexOf("\"") == -1) gloss 
+             else gloss.substring(0, gloss.indexOf("\"")-2)
   val def2v = avgVector(text2set(defn)._1
     .toArray.map(w2v(_)))
 }

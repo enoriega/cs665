@@ -69,7 +69,10 @@ object GraphUtils {
   def topKSynsets(ref: Seq[String], sets: Array[Synset], k: Int) = {
     sets.map(s => {
       val tmp = Node(s, "")
-      val defn = text2set(tmp.defn)._1
+      val (dw, dt) = text2set(tmp.defn)
+      val defn = dw.zipWithIndex.filter({
+        case (w, i) => dt(i).equals("NN")
+        }).toMap.keys.toArray
        (s, Utils._w2v.sanitizedTextSimilarity(ref.toList, defn.toList))
       }).sortWith(_._2 > _._2).slice(0, k).map(_._1)
   }
@@ -97,7 +100,7 @@ object GraphUtils {
             case null => Array[Synset]()
             case _ => iw.getSenses.asScala.toArray
             } 
-          val topKsets = topKSynsets(words, posSynsets, 3)
+          val topKsets = topKSynsets(words, posSynsets, 1)
           topKsets.foreach(set => { 
             val s = Node(set, tag)
             G += s
@@ -158,14 +161,14 @@ object GraphUtils {
           val hypernyms = PointerUtils.getDirectHypernyms(set).asScala.toArray.map(_.getSynset)
           val holonyms = PointerUtils.getPartHolonyms(set).asScala.toArray.map(_.getSynset)
           val similar = PointerUtils.getSynonyms(set).asScala.toArray.map(_.getSynset)
-          addEdges(G)(Q, u, topKSynsets(words, hypernyms, 3), "hypernym", tag)
-          addEdges(G)(Q, u, topKSynsets(words, holonyms, 3), "holonym", tag)
+          addEdges(G)(Q, u, topKSynsets(words, hypernyms, 1), "hypernym", tag)
+          addEdges(G)(Q, u, topKSynsets(words, holonyms, 1), "holonym", tag)
           addEdges(G)(Q, u, topKSynsets(words, similar, 1), "similar", tag)
           u.color = Node.BLACK
         case "VB" =>
           val hypernyms = PointerUtils.getDirectHypernyms(set).asScala.toArray.map(_.getSynset)
           val similar = PointerUtils.getSynonyms(set).asScala.toArray.map(_.getSynset)
-          addEdges(G)(Q, u, topKSynsets(words, hypernyms, 3), "hypernym", tag)
+          addEdges(G)(Q, u, topKSynsets(words, hypernyms, 1), "hypernym", tag)
           addEdges(G)(Q, u, topKSynsets(words, similar, 1), "similar", tag)
           u.color = Node.BLACK
         case "JJ" =>

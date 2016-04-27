@@ -31,13 +31,20 @@ class Path {
   def top() = if(!elems.isEmpty) Some(elems.top._1) else None
 
   def apply(index: Int) = try {
-    elems(index)
+    Some(elems(index))
     } catch {
-      case aioobe: ArrayIndexOutOfBoundsException => println("Index out of bounds")
+      case aioobe: ArrayIndexOutOfBoundsException => {
+        println("Index out of bounds")
+        None
+      }
     }
 
   def update(index: Int, _that: (Node, Option[(String, Double)])) = {
     elems(index) = _that
   }
+
+  def size() = elems.size
+
+  def reverse() = new Path().copy(this.elems.reverse)
 
 }
