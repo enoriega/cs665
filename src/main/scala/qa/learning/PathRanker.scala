@@ -7,7 +7,8 @@ import qa.paths._
 import qa.util._
 import qa.qtype.BottomUpClassify
 import com.typesafe.config.{ConfigFactory, Config}
-import java.io.File
+import java.io._
+import java.util.concurrent.CyclicBarrier
 import edu.arizona.sista.learning.{SVMRankingClassifier, RVFRankingDataset}
 import edu.arizona.sista.learning.{Datum, RVFDatum, ScaleRange, Datasets}
 import edu.arizona.sista.struct._
@@ -23,7 +24,8 @@ class PathRanker(c: Double = 0.1, keepFiles: Boolean = false)
   val svmRanker = new SVMRankingClassifier[String](config.getString("graph.folder"), 
     cLight = c, keepIntermediateFiles = keepFiles)
   val dataset = new RVFRankingDataset[String]
-  var G: Option[Graph[Node, WkLkDiEdge]] = None
+  var numThreads: Option[Int] = None
+  var barrier: Option[CyclicBarrier] = None
   var scaleRange: Option[ScaleRange[String]] = None
   
   def rerank(questions:Seq[Question], index:IRIndex):Seq[Question] = {
@@ -34,18 +36,21 @@ class PathRanker(c: Double = 0.1, keepFiles: Boolean = false)
 
     val scores = ArrayBuffer[Array[Double]]()
     questions.foreach(q => {
-      G = Some(GraphUtils.load(s"${config.getString("graph.folder")}/${q.id}.json"))
+      val G = Some(GraphUtils.load(s"${config.getString("graph.folder")}/${q.id}.json"))
       val qid = q.choices.zipWithIndex.reverse.foldLeft(
         List[Datum[Int, String]]())(
           (answers, choice) => {
-            val features = mkFeatures(q, choice._1)
+            val features = mkFeatures(G, q, choice._1)
             val scaledFeatures = Datasets.svmScaleDatum[String](features,
               scaleRange.get, 0.0, 1.0)
             new RVFDatum[Int, String](0, scaledFeatures) :: answers
           })
       done += 1
+      print(s"$done/$total added to G\r")
       scores += svmRanker.scoresOf(qid).toArray
       })
+
+    print("\n")
 
     // Enrique's code
     for((q,r) <- questions zip scores) yield {
@@ -103,7 +108,7 @@ class PathRanker(c: Double = 0.1, keepFiles: Boolean = false)
     (scores.map(_._1), _scores)
   }
 
-  def mkFeatures(q: Question, a: Answer) = {
+  def mkFeatures(G: Option[Graph[Node,WkLkDiEdge]], q: Question, a: Answer) = {
     val (qWords, qTags) = sentence2set(q.annotation.get.sentences)
     val (aWords, aTags) = sentence2set(a.annotation.get.sentences)
     
@@ -212,25 +217,48 @@ class PathRanker(c: Double = 0.1, keepFiles: Boolean = false)
 
     var done = 0
     val total = questions.size
+    val id = (Thread.currentThread.getId)%numThreads.get
+    val name = (Thread.currentThread.getName)
 
-    questions.foreach(q => {      
-      G = Some(GraphUtils.load(s"${config.getString("graph.folder")}/${q.id}.json"))
-      dataset += q.choices.zipWithIndex.reverse.foldLeft(
+    val tw = new BufferedWriter(new FileWriter(s"${config.getString("graph.keepAlive")}_$id.out"))
+    questions.foreach(q => {
+      val G = Some(GraphUtils.load(s"${config.getString("graph.folder")}/${q.id}.json"))
+      val qid = q.choices.zipWithIndex.reverse.foldLeft(
         List[Datum[Int, String]]())(
           (answers, choice) => 
             new RVFDatum[Int, String](if(choice._2 == q.rightChoice.get) 1 else 0,
-              mkFeatures(q, choice._1)) :: answers)
+              mkFeatures(G, q, choice._1)) :: answers)
+      this.synchronized {
+        dataset += qid
+      }
       done += 1
+      try {
+        tw.write(q.id + "\n")
+        tw.flush()
+        } catch {
+          case io: IOException =>
+        }
+
       print(s"$done/$total Qs added to graph\r")
       })
     
-    print("\n")
 
-    scaleRange = Some(Datasets.svmScaleRankingDataset[Int, String](dataset, 0.0, 1.0))
-    /*for(i <- 0 until dataset.size) 
-      for(j <- 0 until 4)
-        println(dataset.featuresCounter(i,j).toString)*/
-    svmRanker.train(dataset)
+    print("\n")
+    tw.write(name + " waiting at barrier\n"); tw.close()
+
+    // Wait until other threads finish
+    println(name + " waiting at barrier")
+    this.barrier.get.await()
+    
+    // Let only one thread do this
+    if(id == 0) {
+      scaleRange = Some(Datasets.svmScaleRankingDataset[Int, String](
+        dataset, 0.0, 1.0))
+      svmRanker.train(dataset)
+    }
+
+    // Wait until thread 0 finishes training
+    this.barrier.get.await()
   }
 
   def load(file:File, normalizersFile:Option[File] = None) = {}
