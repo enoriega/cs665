@@ -28,7 +28,7 @@ class ThreadController(pr: PathRanker, questions: Seq[Question],
       (questions, future) => future.get match {
         case Some(q) => questions ++ q
         case None => questions
-        })
+        }).sortWith(_.id < _.id)
   }
 }
 
@@ -44,7 +44,7 @@ class ThreadRunner(pr: PathRanker, questions: Seq[Question],
     //(new PathRanker).downloadGraph(subQuestions)
 
     if(isTrain) {
-      pr.train(subQuestions, null)
+      pr.addToDataset(subQuestions)
       None
     }
     else Some(pr.rerank(subQuestions, null))

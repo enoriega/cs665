@@ -37,10 +37,14 @@ object PathInference {
     pr.numThreads = Some(numThreads)
     pr.barrier = Some(new CyclicBarrier(numThreads))
     
-    val futureOne = (new ThreadController(pr, train,
-      isTrain=true, numThreads)).call
-    val rq = (new ThreadController(pr, test, 
-      isTrain=false, numThreads)).call
+    //val questionBuffer = ArrayBuffer[Question]()
+    val trainFolds = Range(0,train.size+1,numThreads).toArray
+    val testFolds = Range(0,test.size+1,numThreads).toArray
+
+    pr.addToDataset(train)
+    pr.train
+    
+    val questionBuffer = pr.rerank(test, null)
 
     try {
       var fin = ""
@@ -58,8 +62,8 @@ object PathInference {
       val ew = new BufferedWriter(new FileWriter(fin_e))
 
       val choices = Array("A", "B", "C", "D")
-      rq.foreach(r => bw.write(s"${r.id}, ${choices(r.rightChoice.get)}\n"))
-      for((question, qi) <- rq.zipWithIndex;
+      questionBuffer.foreach(r => bw.write(s"${r.id}, ${choices(r.rightChoice.get)}\n"))
+      for((question, qi) <- questionBuffer.zipWithIndex;
           (choice, ci) <- question.choices.zipWithIndex){
             // Format: Question Index \t Answer Index \t Numeric score
             ew.write(s"$qi\t$ci\t${choice.score}\n")
@@ -72,7 +76,7 @@ object PathInference {
       }
 
 
-    rq
+    questionBuffer.toSeq
   }
 
   def main(args: Array[String]) = {
