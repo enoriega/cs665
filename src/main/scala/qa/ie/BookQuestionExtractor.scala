@@ -1,11 +1,12 @@
 package qa.ie
 
-import java.io.File
+import java.io._
 import io.Source
 import scala.util.Random
+import collection.mutable.ArrayBuffer
 import scala.util.{Try,Success,Failure}
 import edu.arizona.sista.processors.fastnlp.FastNLPProcessor
-import edu.arizona.sista.processors.{Document, Sentence}
+import edu.arizona.sista.processors.{Document, Sentence, DocumentSerializer}
 
 /** Enumerates the documents over a "Becky's" book text file
  *  @Author Enrique Noriega <enoriega@email.arizona.edu>
@@ -13,48 +14,78 @@ import edu.arizona.sista.processors.{Document, Sentence}
 object BookQuestionExtractor extends App{
     val filePath = args(0)
 
-    val proc = new FastNLPProcessor(withDiscourse=false)
+    val d = if(filePath.endsWith(".txt")){
+      val proc = new FastNLPProcessor(withDiscourse=false)
 
-    val k = 5
+      val k = 5
 
-    // Filter for questions and incomplete sentences
-    val marks = Set("?", ":", ";")
+      // Filter for questions and incomplete sentences
+      val marks = Set("?", ":", ";")
 
-    // Parse the lines and annotate the docs
-    val rawLines:Seq[String] = Source.fromFile(filePath).getLines.toSeq
+      // Parse the lines and annotate the docs
+      // val rawLines:Seq[String] = Source.fromFile(filePath).getLines.toSeq
+      val br = new BufferedReader(new FileReader(filePath))
+      val rawLines:ArrayBuffer[String] = new ArrayBuffer[String]
+      var line = br.readLine
+      while(line != null){
+        rawLines += line
+        line = br.readLine
+      }
+      br.close
 
-    val lines = rawLines.filter{
-      line =>
-        val last = line.takeRight(1)
-        !marks.contains(last)
+      val lines = rawLines.toSeq.filter{
+        line =>
+          val last = line.takeRight(1)
+          !marks.contains(last)
+      }
+
+
+
+      val paragraphs:Map[String, Document] = lines.map{
+        l =>
+          val tokens = l.split("\t")
+          (tokens(0), tokens(1))
+      }.groupBy{
+        case (id, txt) =>
+          val key = id.split('.').dropRight(1).mkString(".")
+          key
+      }.mapValues{
+        tuples =>
+          val sentences = tuples.map(_._2)
+          val doc = proc.annotateFromSentences(sentences)
+          doc
+      }
+
+      // Serialize
+      val docs = paragraphs.values
+
+      val ds = new DocumentSerializer
+      for((key, doc) <- paragraphs){
+        val out = ds.save(doc)
+        val pw = new PrintWriter(s"$key.ser")
+        pw.write(out)
+        pw.close
+      }
+
+
+      docs.toList
+    }
+    else{
+      // Deserialize
+      val ds = new DocumentSerializer
+      val dir = new File(filePath)
+      val files:Seq[File] = dir.listFiles.filter(f => f.isFile && f.getName.endsWith(".ser"))
+      files.map(f => ds.load(new BufferedReader(new FileReader(f))))
     }
 
 
-
-    val paragraphs:Map[String, Document] = lines.map{
-      l =>
-        val tokens = l.split("\t")
-        (tokens(0), tokens(1))
-    }.groupBy{
-      case (id, txt) =>
-        val key = id.split('.').dropRight(1).mkString(".")
-        key
-    }.mapValues{
-      tuples =>
-        val sentences = tuples.map(_._2)
-        val doc = proc.annotateFromSentences(sentences)
-        doc
-    }
-
-
-    val d = paragraphs.values.toList
 
     val questions:Map[(Document, Int), ArtificialQA] = d.flatMap{
       doc =>
       try{
         doc.sentences.zipWithIndex map {
           case (sen, ix) =>
-            (doc, ix) -> makeQuestion(sen, ix, doc)
+            (doc, ix) -> makeQuestionNsubj(sen, ix, doc)
         }
       } catch{
         case _:Throwable => Seq()
@@ -89,7 +120,7 @@ object BookQuestionExtractor extends App{
         false
     }
 
-    def harvestAlternatives(d:Document, i:Int, qa:ArtificialQA, k:Int = 10) = {
+    def harvestAlternativesNsbuj(d:Document, i:Int, qa:ArtificialQA, k:Int = 10) = {
       val alternatives = Random.shuffle(range(i, k).map{
         j =>
           questions.lift((d, j))
@@ -103,18 +134,39 @@ object BookQuestionExtractor extends App{
       (filteredAlternatives ++ aditionalAlternatives).toSet.take(3).toSeq
     }
 
-    val questionsWithAlternatives:Iterable[ArtificialQA] = for(((d, i), qa) <- questions) yield {
+    def harvestAlternativesXcomp(d:Document, i:Int, qa:ArtificialQA, k:Int = 10) = {
+      val alternatives = Random.shuffle(range(i, k).map{
+        j =>
+          questions.lift((d, j))
+      }.collect{case Some(a) => a})
 
-      val alternatives = harvestAlternatives(d, i, qa)
+      // Filters on the alternatives
+      val filteredAlternatives = alternatives.filter(questionFilter(qa))
+      val aditionalAlternatives = Random.shuffle(questions.values).filter{
+        a => !filteredAlternatives.exists(_ == a) && qa != a
+      }.take(Seq(3-filteredAlternatives.size, 0).max)
+      (filteredAlternatives ++ aditionalAlternatives).toSet.take(3).toSeq
+    }
+
+    val questionsWithAlternativesNsubj:Iterable[ArtificialQA] = for(((d, i), qa) <- questions) yield {
+
+      val alternatives = harvestAlternativesNsbuj(d, i, qa)
 
       ArtificialQA(qa.qtype, qa.question, qa.answer, qa.questionNouns, qa.answerNouns, alternatives.map(_.answer))
     }
 
-    for(question <- questionsWithAlternatives){
+    val questionsWithAlternativesXcomp:Iterable[ArtificialQA] = for(((d, i), qa) <- questions) yield {
+
+      val alternatives = harvestAlternativesXcomp(d, i, qa)
+
+      ArtificialQA(qa.qtype, qa.question, qa.answer, qa.questionNouns, qa.answerNouns, Seq())
+    }
+
+    for(question <- questionsWithAlternativesNsubj){
       println(s"${question.question}\t${question.answer}\t" + question.alternatives.mkString("\t"))
     }
 
-    def makeQuestion(sen:Sentence, index:Int, context:Document):ArtificialQA = {
+    def makeQuestionNsubj(sen:Sentence, index:Int, context:Document):ArtificialQA = {
 
       val stopLemmas = Set("figure", "table", "example", "chapter")
 
@@ -129,70 +181,150 @@ object BookQuestionExtractor extends App{
             val allEdges = deps.outgoingEdges
             val edges = allEdges(root)
 
+
             // Find the subject
-            val subj = edges filter (e => e._2 == "nsubj")
+            val subj = edges filter (e => e._2.startsWith("nsubj"))
             if(subj.length == 1){
-                // Build the question
-                val verb = sen.lemmas.get(root)
-                val words = sen.words
-                val qType = s"NNP"
+               // Build the question
+               val verb = sen.lemmas.get(root)
+               val words = sen.words
+               val qType = s"NNP"
 
-                val answerNums = expand(subj(0)._1, allEdges)
+               val answerNums = expand(subj(0)._1, allEdges)
 
-                val answerTags = answerNums.map(tags).toSet
-                val filteredAnswerTags = answerNums.filter{
-                  i =>
-                    !stopLemmas.contains(lemmas(i).toLowerCase)
-                }.map(tags)
+               val answerTags = answerNums.map(tags).toSet
+               val filteredAnswerTags = answerNums.filter{
+                 i =>
+                   !stopLemmas.contains(lemmas(i).toLowerCase)
+               }.map(tags)
 
-                // Ignore those that only contain a preposition or a determiner
-                val filtered = Set("PRP", "DT")
-                if(answerTags.size == 1 && filtered.contains(answerTags.head)){
-                  new NoQA
-                }
-                // Filter out those that have answer stop words
-                else if(!filteredAnswerTags.map(_(0)).toSet.contains('N')){
-                  new NoQA
-                }
-                else{
-                  // Filter out all those questions that don't have a noun and a verb
-                  val answerNumsSet = answerNums.toSet
-                  val questionNums = (0 to words.size - 1).filter(!answerNumsSet.contains(_))
+               // Ignore those that only contain a preposition or a determiner
+               val filtered = Set("PRP", "DT")
+               if(answerTags.size == 1 && filtered.contains(answerTags.head)){
+                 new NoQA
+               }
+               // Filter out those that have answer stop words
+               else if(!filteredAnswerTags.map(_(0)).toSet.contains('N')){
+                 new NoQA
+               }
+               else{
+                 // Filter out all those questions that don't have a noun and a verb
+                 val answerNumsSet = answerNums.toSet
+                 val questionNums = (0 to words.size - 1).filter(!answerNumsSet.contains(_))
 
-                  val f = questionNums.map(tags(_)(0)).toSet
+                 val f = questionNums.map(tags(_)(0)).toSet
 
-                  if(f.contains('N') && f.contains('V')){
+                 if(f.contains('N') && f.contains('V')){
 
-                    val answer = answerNums.sorted.map(words).mkString(" ")
+                   val answer = answerNums.sorted.map(words).mkString(" ")
 
-                    val question = (0 to words.size - 1).map{
-                      ix =>
-                        if(!answerNumsSet.contains(ix))
-                          words(ix)
-                        else
-                          List.fill(words(ix).size)("_").mkString
+                   val question = (0 to words.size - 1).map{
+                     ix =>
+                       if(!answerNumsSet.contains(ix))
+                         words(ix)
+                       else
+                         List.fill(words(ix).size)("_").mkString
 
-                    }.mkString(" ")
+                   }.mkString(" ")
 
-                    // TODO: Add justification
-                    val justification = ""//justify(sen, index, context)
+                   // TODO: Add justification
+                   val justification = ""//justify(sen, index, context)
 
-                    ArtificialQA(qType, question, answer, questionNums.filter(tags(_).startsWith("N")).map(lemmas), answerNums.filter(tags(_).startsWith("N")).map(lemmas))
+                   ArtificialQA(qType, question, answer, questionNums.filter(tags(_).startsWith("N")).map(lemmas), answerNums.filter(tags(_).startsWith("N")).map(lemmas))
 
 
-                  }
-                  else{
-                    new NoQA
-                  }
+                 }
+                 else{
+                   new NoQA
+                 }
 
-                }
+               }
 
-            }
-            else
-              new NoQA
-          }
+           }
+           else
+             new NoQA
+         }
           else
             new NoQA
+        case None => new NoQA
+      }
+    }
+
+    def makeQuestionXcom(sen:Sentence, index:Int, context:Document):ArtificialQA = {
+      val stopLemmas = Set("figure", "table", "example", "chapter")
+
+      sen.stanfordBasicDependencies match {
+        case Some(deps) =>
+          val root:Int = deps.roots.head // I assume there's a single root
+          val tags:Seq[String] = sen.tags match { case Some(t) => t; case None => Seq()}
+          val lemmas:Seq[String] = sen.lemmas match { case Some(t) => t; case None => Seq()}
+          // If the root is a verb, go ahead
+
+          val allEdges = deps.outgoingEdges
+          val edges = deps.outgoingEdges.flatten
+
+          // Find the subject
+          val xcomp = edges filter (e => e._2.startsWith("xcomp"))
+          if(xcomp.length == 1){
+             // Build the question
+             val verb = sen.lemmas.get(root)
+             val words = sen.words
+             val qType = s"XCOMP"
+
+             val answerNums = expand(xcomp(0)._1, allEdges)
+
+             val answerTags = answerNums.map(tags).toSet
+             val filteredAnswerTags = answerNums.filter{
+               i =>
+                 !stopLemmas.contains(lemmas(i).toLowerCase)
+             }.map(tags)
+
+             // Ignore those that only contain a preposition or a determiner
+             val filtered = Set("PRP", "DT")
+             if(answerTags.size == 1 && filtered.contains(answerTags.head)){
+               new NoQA
+             }
+             // Filter out those that have answer stop words
+             else if(!filteredAnswerTags.map(_(0)).toSet.contains('N')){
+               new NoQA
+             }
+             else{
+               // Filter out all those questions that don't have a noun and a verb
+               val answerNumsSet = answerNums.toSet
+               val questionNums = (0 to words.size - 1).filter(!answerNumsSet.contains(_))
+
+               val f = questionNums.map(tags(_)(0)).toSet
+
+               if(f.contains('N') && f.contains('V')){
+
+                 val answer = answerNums.sorted.map(words).mkString(" ")
+
+                 val question = (0 to words.size - 1).map{
+                   ix =>
+                     if(!answerNumsSet.contains(ix))
+                       words(ix)
+                     else
+                       List.fill(words(ix).size)("_").mkString
+
+                 }.mkString(" ")
+
+                 // TODO: Add justification
+                 val justification = ""//justify(sen, index, context)
+
+                 ArtificialQA(qType, question, answer, questionNums.filter(tags(_).startsWith("N")).map(lemmas), answerNums.filter(tags(_).startsWith("N")).map(lemmas))
+
+
+               }
+               else{
+                 new NoQA
+               }
+
+             }
+
+           }
+           else
+             new NoQA
+
         case None => new NoQA
       }
     }
