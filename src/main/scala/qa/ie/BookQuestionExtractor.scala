@@ -75,7 +75,12 @@ object BookQuestionExtractor extends App{
       val ds = new DocumentSerializer
       val dir = new File(filePath)
       val files:Seq[File] = dir.listFiles.filter(f => f.isFile && f.getName.endsWith(".ser"))
-      files.map(f => ds.load(new BufferedReader(new FileReader(f))))
+      files.map{f =>
+        val fr = new BufferedReader(new FileReader(f))
+        val doc = ds.load(fr)
+        fr.close
+        doc
+      }
     }
 
 
