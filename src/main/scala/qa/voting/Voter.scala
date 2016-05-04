@@ -228,6 +228,7 @@ object Voter extends App {
 
     for (line <- lines) {
       val fields = line.split("\t")
+      if (fields.length != 3) println(line)
       assert (fields.length == 3)
 
       var qid = fields(0).toInt
