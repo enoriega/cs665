@@ -4,6 +4,7 @@ import java.io.{FilenameFilter, File, PrintWriter}
 
 import edu.arizona.sista.embeddings.word2vec.Word2Vec
 import edu.arizona.sista.struct.Counter
+import qa.input.InputUtils
 
 /**
   * Created by bsharp on 3/7/16.
@@ -61,19 +62,9 @@ object CleanCK12Book extends App {
     true
   }
 
-  // Get all files in a directory ending with a given extension
-  def findFiles(collectionDir: String, fileExtension:String): Array[File] = {
-    val dir = new File(collectionDir)
-    dir.listFiles(new FilenameFilter {
-      def accept(dir: File, name: String): Boolean = name.endsWith(fileExtension)
-    })
-  }
-
-
-
   val dir = "/home/bsharp/ck12_8thScience-27Feb-Wenli/clean_file/"
 
-  val filesIn = findFiles(dir, ".clean").map(f => f.getAbsolutePath)
+  val filesIn = InputUtils.findFiles(dir, ".clean").map(f => f.getAbsolutePath)
 
   val fnIn = "/home/bsharp/ck12_8thScience-27Feb-Wenli/clean_file/CK-12-Life-Science-Concepts-For-Middle-School.txt.clean"
 
