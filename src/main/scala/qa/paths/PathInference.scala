@@ -11,15 +11,20 @@ import qa.learning._
 import com.typesafe.config.{ConfigFactory, Config}
 import java.io._
 import java.util.concurrent.CyclicBarrier
+import scala.collection.parallel._
 
 object PathInference {
   val config = ConfigFactory.load
   val trainReader = new InputReader(new File(config.getString("trainingFile")))
   val devReader = new InputReader(new File(config.getString("devFile")))
   val testReader = new InputReader(new File(config.getString("testFile")))
+  val artificialReader1 = new InputReader(new File(config.getString("artificialQ1")))
+  val artificialReader2 = new InputReader(new File(config.getString("artificialQ2")))
   val trainQs = trainReader.questions
   val devQs = devReader.questions
   val testQs = testReader.questions
+  val artificialQA1 = artificialReader1.questions
+  val artificialQA2 = artificialReader2.questions
 
   def eval(src: Seq[Int], pred: Seq[Int]) = {
     val correct = src.zip(pred).foldLeft(0)(
@@ -30,20 +35,25 @@ object PathInference {
   }
 
   def unitTest(_c: Double, args: Seq[String], train: Seq[Question],
-    test: Seq[Question], isDev: Boolean): Seq[Question] = {
+    test: Seq[Question], isDev: Boolean, isArtificial: Int): Seq[Question] = {
     val pr = new PathRanker(keepFiles = true, c=_c)
     val numThreads = args(0).toInt
 
     pr.numThreads = Some(numThreads)
     pr.barrier = Some(new CyclicBarrier(numThreads))
+    pr.isArtificial = isArtificial
     
     //val questionBuffer = ArrayBuffer[Question]()
     val trainFolds = Range(0,train.size+1,numThreads).toArray
     val testFolds = Range(0,test.size+1,numThreads).toArray
 
+    println("Adding all to dataset...")
     pr.addToDataset(train)
+
+    println("Calling SVMrank train...")
     pr.train
-    
+
+    println("Reranking...")
     val questionBuffer = pr.rerank(test, null)
 
     try {
@@ -80,23 +90,29 @@ object PathInference {
   }
 
   def main(args: Array[String]) = {
-    val cFolds = Array(0.1, 1.0, 10.0, 100.0, 1000.0)
-    val acc = Array(0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+    //val cFolds = Array(0.1, 1.0, 10.0, 100.0, 1000.0)
+    //val acc = Array(0.0, 0.0, 0.0, 0.0, 0.0)
 
-    cFolds.zipWithIndex.foreach{case (_c,i) => {
-      val rq = unitTest(_c, args, trainQs, devQs, isDev=true)
-      val src = devQs.map(_.rightChoice.get)
-      val pred = rq.map(_.rightChoice.get)
-      acc(i) = eval(src, pred)
-      println(s"Accuracy for c=${_c} is ${acc(i)}")
-      }}
-    
-    val bestC = cFolds.indexOf(acc.max)
+    val trainSet = Array("default" -> trainQs, "qa1" -> artificialQA1, "qa2" -> artificialQA2)
+    val acc = Array(0.0)
+    //val bestC = cFolds(acc.indexOf(acc.max))
+    val _c = 1.0
+
+    val (k,v) = (args(1), trainSet.find(_._1 == args(1)).get._2)
+
+    val rq = unitTest(_c, args, v, devQs, isDev=true, isArtificial=trainSet.indexOf((k,v)))
+    val src = devQs.map(_.rightChoice.get)
+    val pred = rq.map(_.rightChoice.get)
+    acc(0) = eval(src, pred)
+    println(s"Accuracy for c=${_c}, trainSet=${k} is ${acc(0)}")
     val aw = new BufferedWriter(new FileWriter(
-      s"${config.getString("graph.accuracies")}"))
+      s"${config.getString("BASE_DIR")}_${k}.out"))
     aw.write(acc.mkString(", ")+"\n")
-    aw.close()
+    
 
-    val _8kOut = unitTest(bestC, args, trainQs++devQs, testQs, isDev=false)
+    if(args(1).equals("default")) {
+      val _8kOut = unitTest(_c, args, trainQs++devQs, testQs, isDev=false, 0)
+    }
+    aw.close()
   }
 }

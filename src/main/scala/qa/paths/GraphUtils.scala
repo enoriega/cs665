@@ -13,6 +13,7 @@ import scala.collection.JavaConverters._
 import com.typesafe.config.{ConfigFactory, Config}
 import java.io.{BufferedWriter, FileWriter, File, IOException}
 import java.util.NoSuchElementException
+import java.io.FileNotFoundException
 import edu.arizona.sista.embeddings.word2vec.Word2Vec
 import edu.arizona.sista.processors.fastnlp.FastNLPProcessor
 import edu.arizona.sista.processors.Sentence
@@ -251,10 +252,15 @@ object GraphUtils {
     bw.close()
   }
 
-  def load(jsonFile: String) = {
-    val source = scala.io.Source.fromFile(jsonFile)
-    val lines = try source.getLines mkString "\n" finally source.close()
-    Graph.fromJson[Node, WkLkDiEdge](lines, descriptor)
+  def load(jsonFile: String): Option[Graph[Node, WkLkDiEdge]] = {
+    try {
+      val source = scala.io.Source.fromFile(jsonFile)
+      val lines = try source.getLines mkString "\n" finally source.close()
+      Some(Graph.fromJson[Node, WkLkDiEdge](lines, descriptor))
+    } catch {
+      case fe: FileNotFoundException => None
+    }
+    
   }
 
   def toDot(G: Graph[Node, WkLkDiEdge], dotFile: String, 

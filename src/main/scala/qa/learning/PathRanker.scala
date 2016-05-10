@@ -22,15 +22,25 @@ import scalax.collection.edge.Implicits._
 class PathRanker(c: Double = 0.1, keepFiles: Boolean = false) 
   extends Ranker {
   val config = ConfigFactory.load
-  val svmRanker = new SVMRankingClassifier[String](config.getString("graph.folder"), 
+  val svmRanker = new SVMRankingClassifier[String](config.getString("graph.base_folder"), 
     cLight = c, keepIntermediateFiles = keepFiles)
   val dataset = new RVFRankingDataset[String]
-  var numThreads: Option[Int] = None
+  var numThreads: Option[Int] = Some(1)
   var barrier: Option[CyclicBarrier] = None
   var scaleRange: Option[ScaleRange[String]] = None
+  var isArtificial: Int = 0
 
-  def rerank(q: Question) = {
-    val G = Some(GraphUtils.load(s"${config.getString("graph.folder")}/${q.id}.json"))
+  def rerank(q: Question): Array[Double] = {
+    val filename = isArtificial match {
+      case 0 => config.getString("graph.default_folder")
+      case 1 => config.getString("graph.base_folder")+"/artificial1"
+      case 2 => config.getString("graph.base_folder")+"/artificial2"
+    }
+
+    val G = GraphUtils.load(s"${filename}/${q.id}.json") match {
+      case Some(g) => Some(g)
+      case None => println("Graph does not exist!"); return q.choices.map(_ => 0.0).toArray
+    }
     val qid = q.choices.zipWithIndex.reverse.foldLeft(
       List[Datum[Int, String]]())(
         (answers, choice) => {
@@ -136,20 +146,29 @@ class PathRanker(c: Double = 0.1, keepFiles: Boolean = false)
       case false => 0.0
     }
 
+    var (maxScorePath, minScorePath, maxLengthPath, minLengthPath) = (
+      new Path, new Path, new Path, new Path)
+
     val maxScore = if(summedScores.isEmpty) 0.0 else summedScores.max 
     val maxScoreLength = if(summedScores.isEmpty) 0.0 
-      else paths(summedScores.indexOf(maxScore)).elems.size
+      else {
+       maxScorePath = paths(summedScores.indexOf(maxScore))
+       maxScorePath.elems.size
+      }
     
     val minScore = if(summedScores.isEmpty) 0.0 else summedScores.min
     val minScoreLength = if(summedScores.isEmpty) 0.0
-      else paths(summedScores.indexOf(minScore)).elems.size
+      else {
+       minScorePath = paths(summedScores.indexOf(minScore))
+       minScorePath.elems.size
+      }
 
     val minPathL = if(paths.isEmpty) 0.0 else paths.map(_.elems.size).min
     val minPathLScore = if(summedScores.isEmpty) 0.0
       else {
         if(paths.isEmpty) 0.0 else {
-          summedScores(paths.indexOf(
-            paths.find(_.elems.size == minPathL).get))
+          minLengthPath = paths.find(_.elems.size == minPathL).get
+          summedScores(paths.indexOf(minLengthPath))
         }
       }
 
@@ -157,10 +176,24 @@ class PathRanker(c: Double = 0.1, keepFiles: Boolean = false)
     val maxPathLScore = if(summedScores.isEmpty) 0.0
       else {
         if(paths.isEmpty) 0.0 else {
-          summedScores(paths.indexOf(
-            paths.find(_.elems.size == maxPathL).get))
+          maxLengthPath = paths.find(_.elems.size == maxPathL).get
+          summedScores(paths.indexOf(maxLengthPath))
         }
       }
+
+    val filename = isArtificial match {
+      case 0 => config.getString("graph.base_folder")+"/best_paths/default"
+      case 1 => config.getString("graph.base_folder")+"/best_paths/artificial1"
+      case 2 => config.getString("graph.base_folder")+"/best_paths/artificial2"
+    }
+
+    val fw = new BufferedWriter(new FileWriter(s"${filename}/${q.id}_best_paths.out", true))
+
+    fw.write(s"max_score_path: ${maxScorePath.toString}, score: ${maxScore}\n\n")
+    fw.write(s"min_score_path: ${minScorePath.toString}, score: ${minScore}\n\n")
+    fw.write(s"max_length_path: ${maxLengthPath.toString}, length: ${maxPathL}\n\n")
+    fw.write(s"min_length_path: ${minLengthPath.toString}, length: ${minPathL}\n\n")
+    
 
     val gNodeSize = G.get.nodes.size
     val gEdgeSize = G.get.edges.size
@@ -197,6 +230,7 @@ class PathRanker(c: Double = 0.1, keepFiles: Boolean = false)
     counter.incrementCount(s"${prefix}holo_mero", holo_mero)
     counter.incrementCount(s"${prefix}node_size", gNodeSize)
     counter.incrementCount(s"${prefix}edge_size", gEdgeSize)
+    fw.write(counter.toString+"\n"); fw.close()
     counter
   }
 
@@ -210,7 +244,7 @@ class PathRanker(c: Double = 0.1, keepFiles: Boolean = false)
         if(q1 != q2) { // Filters paths added from Q->Q and A->A.
           pw.write(s"(${q1}, and ${q2}) going in, $done/$count\n")
           pw.flush()
-          paths += GraphUtils.genAllPaths(G.get, q1, q2).filter(_.elems.size <= 30)
+          paths += GraphUtils.genAllPaths(G.get, q1, q2).filter(_.elems.size <= 23)
           done += 1
           pw.write(s"(${q1}, and ${q2}) coming out, $done/$count\n")
           pw.flush()
@@ -232,8 +266,14 @@ class PathRanker(c: Double = 0.1, keepFiles: Boolean = false)
     val _paths = ArrayBuffer[Queue[Path]]()
     val _qaPaths = ArrayBuffer[Queue[Path]]()
 
+    val suffix = isArtificial match {
+      case 0 => "default"
+      case 1 => "artificial1"
+      case 2 => "artificial2"
+    }
+
     val pw = new BufferedWriter(new FileWriter(
-      s"/work/adityak/Documents/kaggle/keep_alive/$c/keep_alive_${q.id}.out", true))    
+      s"/work/adityak/Documents/kaggle/keep_alive/$c/$suffix/keep_alive_${q.id}.out", true))    
     
     pw.write(s"qWordSize: ${qWordSet.size}, aWordSize: ${aWordSet.size}\n")
     pw.flush()
@@ -261,7 +301,17 @@ class PathRanker(c: Double = 0.1, keepFiles: Boolean = false)
     choice:String, queryRes:QueryResult):Seq[Double] = Seq()
 
   def addToDataset(q: Question): Unit = {
-    val G = Some(GraphUtils.load(s"${config.getString("graph.folder")}/${q.id}.json"))
+    val filename = isArtificial match {
+      case 0 => config.getString("graph.default_folder")
+      case 1 => config.getString("graph.base_folder")+"/artificial1"
+      case 2 => config.getString("graph.base_folder")+"/artificial2"
+    }
+
+    val G = GraphUtils.load(s"${filename}/${q.id}.json") match {      
+      case Some(g) => Some(g)
+      case None => println("Graph does not exist! Call downloadGraph() first!"); return
+      }
+
     val qid = q.choices.zipWithIndex.reverse.foldLeft(
       List[Datum[Int, String]]())(
         (answers, choice) => 
@@ -298,24 +348,23 @@ class PathRanker(c: Double = 0.1, keepFiles: Boolean = false)
 
   def load(file:File, normalizersFile:Option[File] = None) = {}
 
+  def buildGraph(q: Question) = {
+    val (qWords, qTags) = sentence2set(q.annotation.get.sentences)
+    val _G = GraphUtils.mkGraph(qWords, qTags)
+    q.choices.foreach(ans => {
+      val (aWords, aTags) = sentence2set(ans.annotation.get.sentences)
+      _G ++= GraphUtils.mkGraph(aWords, aTags)
+      })
+    GraphUtils.saveTo(_G, s"${config.getString("graph.base_folder")}/artificial/${q.id}.json")
+  }
+
   def downloadGraph(questions: Seq[Question]) = {
     // Init graph
-    var done = 0
-    val total = questions.size
-
     BottomUpClassify.annotateQuestions(questions)
+    val prq = questions.toArray.par
+    prq.tasksupport = new ForkJoinTaskSupport(new
+      scala.concurrent.forkjoin.ForkJoinPool(numThreads.get))
 
-    questions.foreach(q => {
-      val (qWords, qTags) = sentence2set(q.annotation.get.sentences)
-      val _G = GraphUtils.mkGraph(qWords, qTags)
-      q.choices.foreach(ans => {
-        val (aWords, aTags) = sentence2set(ans.annotation.get.sentences)
-        _G ++= GraphUtils.mkGraph(aWords, aTags)
-        })
-      GraphUtils.saveTo(_G, s"${config.getString("graph.folder")}/${q.id}.json")
-      done += 1
-      print(s"$done/$total Qs added to graph\r")
-    })
-    print("\n")    
+    prq.foreach(buildGraph(_))
   }
 } 
