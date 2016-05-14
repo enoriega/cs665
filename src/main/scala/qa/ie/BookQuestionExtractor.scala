@@ -140,6 +140,7 @@ object BookQuestionExtractor extends App{
     }
 
     def harvestAlternativesXcomp(d:Document, i:Int, qa:ArtificialQA, k:Int = 10) = {
+      // TODO: Do the inteligent method
       val alternatives = Random.shuffle(range(i, k).map{
         j =>
           questions.lift((d, j))
@@ -151,24 +152,6 @@ object BookQuestionExtractor extends App{
         a => !filteredAlternatives.exists(_ == a) && qa != a
       }.take(Seq(3-filteredAlternatives.size, 0).max)
       (filteredAlternatives ++ aditionalAlternatives).toSet.take(3).toSeq
-    }
-
-    val questionsWithAlternativesNsubj:Iterable[ArtificialQA] = for(((d, i), qa) <- questions) yield {
-
-      val alternatives = harvestAlternativesNsbuj(d, i, qa)
-
-      ArtificialQA(qa.qtype, qa.question, qa.answer, qa.questionNouns, qa.answerNouns, alternatives.map(_.answer))
-    }
-
-    val questionsWithAlternativesXcomp:Iterable[ArtificialQA] = for(((d, i), qa) <- questions) yield {
-
-      val alternatives = harvestAlternativesXcomp(d, i, qa)
-
-      ArtificialQA(qa.qtype, qa.question, qa.answer, qa.questionNouns, qa.answerNouns, Seq())
-    }
-
-    for(question <- questionsWithAlternativesNsubj){
-      println(s"${question.question}\t${question.answer}\t" + question.alternatives.mkString("\t"))
     }
 
     def makeQuestionNsubj(sen:Sentence, index:Int, context:Document):ArtificialQA = {
@@ -235,7 +218,7 @@ object BookQuestionExtractor extends App{
                    // TODO: Add justification
                    val justification = ""//justify(sen, index, context)
 
-                   ArtificialQA(qType, question, answer, questionNums.filter(tags(_).startsWith("N")).map(lemmas), answerNums.filter(tags(_).startsWith("N")).map(lemmas))
+                   ArtificialQA(sen.getSentenceText, qType, question, answer, questionNums.filter(tags(_).startsWith("N")).map(lemmas), answerNums.filter(tags(_).startsWith("N")).map(lemmas))
 
 
                  }
@@ -316,7 +299,7 @@ object BookQuestionExtractor extends App{
                  // TODO: Add justification
                  val justification = ""//justify(sen, index, context)
 
-                 ArtificialQA(qType, question, answer, questionNums.filter(tags(_).startsWith("N")).map(lemmas), answerNums.filter(tags(_).startsWith("N")).map(lemmas))
+                 ArtificialQA(sen.getSentenceText, qType, question, answer, questionNums.filter(tags(_).startsWith("N")).map(lemmas), answerNums.filter(tags(_).startsWith("N")).map(lemmas))
 
 
                }
@@ -358,4 +341,31 @@ object BookQuestionExtractor extends App{
       val nums = helper(ix, edges)
       nums
     }
+
+    val questionsWithAlternativesNsubj:Iterable[ArtificialQA] = for(((d, i), qa) <- questions) yield {
+
+      val alternatives = harvestAlternativesNsbuj(d, i, qa)
+
+      ArtificialQA(qa.original, qa.qtype, qa.question, qa.answer, qa.questionNouns, qa.answerNouns, alternatives.map(_.answer))
+    }
+
+    val questionsWithAlternativesXcomp:Iterable[ArtificialQA] = for(((d, i), qa) <- questions) yield {
+
+      val alternatives = harvestAlternativesXcomp(d, i, qa)
+
+      ArtificialQA(qa.original, qa.qtype, qa.question, qa.answer, qa.questionNouns, qa.answerNouns, alternatives.map(_.answer))
+    }
+
+    // Change here the generator to use either NSubj or XComp
+    val xcomps = for(question <- questionsWithAlternativesXcomp) yield {
+      s"${question.original}\t${question.question}\t${question.answer}\t" + question.alternatives.mkString("\t")
+    }
+
+    val nsubj = for(question <- questionsWithAlternativesNsubj) yield {
+      s"${question.original}\t${question.question}\t${question.answer}\t" + question.alternatives.mkString("\t")
+    }
+
+    val all =  nsubj
+
+    all foreach println
 }
