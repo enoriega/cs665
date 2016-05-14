@@ -247,14 +247,22 @@ object Voter extends App {
         questionCounter += 1
       }
 
-      if (aid < 4) out(qid)(aid) = score
+      try {
+        if (aid < 4) out(qid)(aid) = score
+      } catch {
+        case e: IndexOutOfBoundsException => {
+          println ("qid: " + qid + "\taid: " + aid + "\tout.length: " + out.length)
+          throw new RuntimeException("ERROR: ")
+        }
+      }
+
 
     }
 
     out.toSeq map (_.toSeq)
   }
 
-  def loadRankers (conf:Config, lexicon: Lexicon[Int], questions: Seq[Question]): Seq[Ranker] = {
+  def loadRankers (conf:Config, lexicon: Lexicon[Int], devLexicon: Lexicon[Int], questions: Seq[Question]): Seq[Ranker] = {
     val rankers = new ArrayBuffer[Ranker]
 
     val nRankers = config.getInt("voter.maxRankers")
@@ -268,7 +276,7 @@ object Voter extends App {
 
         // Find the voting scale for the ranker
         val rankerDevTSVFile = config.getString(s"voter.rankers.$i.tsv_dev")
-        val rankerDevScores = parseTSV(rankerDevTSVFile, lexicon)
+        val rankerDevScores = parseTSV(rankerDevTSVFile, devLexicon)
         currRanker.votingScale = EnsembleUtils.rankPrecisions(questions, rankerDevScores)
 
         rankers.append(currRanker)
@@ -296,14 +304,15 @@ object Voter extends App {
       else ConfigFactory.parseFile(new File(args(0))).resolve()
 
   val questions = new InputReader(new File(config.getString("voter.questions"))).questions
+  val qIDLexicon = buildQIDLexicon(questions)
   // The dev questions should be the 506, and should align with the ranker.i.tsv.dev ranking file for determining the
   // voting scale
   // If you are running only over the 506, then these are just the regular questions
   val devQuestions = new InputReader(new File(config.getString("voter.questions_dev"))).questions
-  val qIDLexicon = buildQIDLexicon(questions)
+  val devQIDLexicon = buildQIDLexicon(devQuestions)
 
   // Loads up the rankers and also calculates the voting scale based on the 506 dev questions
-  val rankers = loadRankers(config, qIDLexicon, devQuestions)
+  val rankers = loadRankers(config, qIDLexicon, devQIDLexicon, devQuestions)
   // Display the rank precision for each ranker:
   for (r <- rankers) {
     println ("Rank precision for " + r.name + "... [" + r.votingScale.mkString(", ") + "]")
