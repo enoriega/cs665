@@ -13,6 +13,7 @@ import edu.arizona.sista.processors.{Document, Sentence, DocumentSerializer}
  */
 object BookQuestionExtractor extends App{
     val filePath = args(0)
+    val random = Random
 
     val d = if(filePath.endsWith(".txt")){
       val proc = new FastNLPProcessor(withDiscourse=false)
@@ -90,7 +91,7 @@ object BookQuestionExtractor extends App{
       try{
         doc.sentences.zipWithIndex map {
           case (sen, ix) =>
-            (doc, ix) -> makeQuestionNsubj(sen, ix, doc)
+            (doc, ix) -> makeQuestionXcomp(sen, ix, doc)
         }
       } catch{
         case _:Throwable => Seq()
@@ -140,19 +141,43 @@ object BookQuestionExtractor extends App{
     }
 
     def harvestAlternativesXcomp(d:Document, i:Int, qa:ArtificialQA, k:Int = 10) = {
-      // TODO: Do the inteligent method
-      val alternatives = Random.shuffle(range(i, k).map{
-        j =>
-          questions.lift((d, j))
-      }.collect{case Some(a) => a})
+
+      val qtype = if(qa.qtype == "XCOMP") "XCOMP3" else qa.qtype
+
+      val alternativesAll = questions.values.filter(_.qtype == qtype).toSeq
+
+      val indices = for(i <- 0 to 5) yield random.nextInt(alternativesAll.size)
+
+      val alternatives = indices map (alternativesAll(_))
 
       // Filters on the alternatives
       val filteredAlternatives = alternatives.filter(questionFilter(qa))
-      val aditionalAlternatives = Random.shuffle(questions.values).filter{
-        a => !filteredAlternatives.exists(_ == a) && qa != a
-      }.take(Seq(3-filteredAlternatives.size, 0).max)
-      (filteredAlternatives ++ aditionalAlternatives).toSet.take(3).toSeq
+
+      filteredAlternatives.toSet.take(3).toSeq
     }
+
+
+    def questionsWithAlternativesNsubj:Iterable[ArtificialQA] = for(((d, i), qa) <- questions) yield {
+
+      val alternatives = harvestAlternativesNsbuj(d, i, qa)
+
+      ArtificialQA(qa.original, qa.qtype, qa.question, qa.answer, qa.questionNouns, qa.answerNouns, alternatives.map(_.answer))
+    }
+
+    def questionsWithAlternativesXcomp:Iterable[ArtificialQA] = for(((d, i), qa) <- questions) yield {
+
+      val alternatives = harvestAlternativesXcomp(d, i, qa)
+
+      ArtificialQA(qa.original, qa.qtype, qa.question, qa.answer, qa.questionNouns, qa.answerNouns, alternatives.map(_.answer))
+    }
+
+    val x1 = questions.values filter (_.qtype == "XCOMP1")
+    val x2 = questions.values filter (_.qtype == "XCOMP2")
+    val x3 = questions.values filter (_.qtype == "XCOMP3")
+    val xf = questions.values filter (_.qtype == "XCOMP")
+
+    println(s"TI: ${x1.size}\tTII: ${x2.size}\tTIII: ${x3.size}\tFallback ${xf.size}")
+
 
     def makeQuestionNsubj(sen:Sentence, index:Int, context:Document):ArtificialQA = {
 
@@ -238,7 +263,7 @@ object BookQuestionExtractor extends App{
       }
     }
 
-    def makeQuestionXcom(sen:Sentence, index:Int, context:Document):ArtificialQA = {
+    def makeQuestionXcomp(sen:Sentence, index:Int, context:Document):ArtificialQA = {
       val stopLemmas = Set("figure", "table", "example", "chapter")
 
       sen.stanfordBasicDependencies match {
@@ -252,14 +277,44 @@ object BookQuestionExtractor extends App{
           val edges = deps.outgoingEdges.flatten
 
           // Find the subject
-          val xcomp = edges filter (e => e._2.startsWith("xcomp"))
-          if(xcomp.length == 1){
+          val xcomps = edges filter (e => e._2.startsWith("xcomp"))
+          if(xcomps.length == 1){
+              val xcomp = xcomps(0)
              // Build the question
-             val verb = sen.lemmas.get(root)
              val words = sen.words
-             val qType = s"XCOMP"
 
-             val answerNums = expand(xcomp(0)._1, allEdges)
+             // Decide what type of xcomp question is type I, II or III
+             // Type I: Is called
+             // Type II: The dependent of the XCOMP is a VBG
+             // Type III: XCOMP depenent to a non conjugated verb probably with a dependency back to a "TO"
+             val qType = {
+
+                 // Type III
+                 if(sen.getSentenceText.contains("is called")
+                    || sen.getSentenceText.contains("is often called")
+                    || sen.getSentenceText.contains("are called")
+                    || sen.getSentenceText.contains("are often called")){
+                     "XCOMP1"
+                 }
+                 else if(tags(xcomp._1) == "VB"){
+                     val x = allEdges(xcomp._1) map ( e => tags(e._1))
+
+                     if(tags.contains("TO")){
+                        "XCOMP3"
+                        }
+                     else
+                        "XCOMP" // Fallback
+                 }
+                 else if(tags(xcomp._1) == "VBG"){
+                     "XCOMP2"
+                 }
+                 else{
+                     "XCOMP" // Fallback
+                 }
+
+             }
+
+             val answerNums = expand(xcomp._1, allEdges)
 
              val answerTags = answerNums.map(tags).toSet
              val filteredAnswerTags = answerNums.filter{
@@ -342,20 +397,8 @@ object BookQuestionExtractor extends App{
       nums
     }
 
-    val questionsWithAlternativesNsubj:Iterable[ArtificialQA] = for(((d, i), qa) <- questions) yield {
 
-      val alternatives = harvestAlternativesNsbuj(d, i, qa)
-
-      ArtificialQA(qa.original, qa.qtype, qa.question, qa.answer, qa.questionNouns, qa.answerNouns, alternatives.map(_.answer))
-    }
-
-    val questionsWithAlternativesXcomp:Iterable[ArtificialQA] = for(((d, i), qa) <- questions) yield {
-
-      val alternatives = harvestAlternativesXcomp(d, i, qa)
-
-      ArtificialQA(qa.original, qa.qtype, qa.question, qa.answer, qa.questionNouns, qa.answerNouns, alternatives.map(_.answer))
-    }
-
+    // println(questionsWithAlternativesXcomp.size)
     // Change here the generator to use either NSubj or XComp
     val xcomps = for(question <- questionsWithAlternativesXcomp) yield {
       s"${question.original}\t${question.question}\t${question.answer}\t" + question.alternatives.mkString("\t")
@@ -365,7 +408,7 @@ object BookQuestionExtractor extends App{
       s"${question.original}\t${question.question}\t${question.answer}\t" + question.alternatives.mkString("\t")
     }
 
-    val all =  nsubj
+    val all =  xcomps
 
     all foreach println
 }
